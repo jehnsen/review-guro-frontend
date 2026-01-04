@@ -40,9 +40,10 @@ export default function DashboardPage() {
     <DashboardLayout>
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Welcome Banner */}
-        <div className="bg-linear-to-r from-blue-600 to-blue-700 rounded-2xl p-6 lg:p-8 text-white relative overflow-hidden">
+        <div className="bg-linear-to-r from-blue-600 via-blue-700 to-indigo-500 rounded-2xl p-6 lg:p-8 text-white relative overflow-hidden">
           <div className="absolute right-0 top-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
           <div className="absolute right-20 bottom-0 w-32 h-32 bg-white/5 rounded-full translate-y-1/2" />
+          <div className="absolute left-1/4 top-1/2 w-48 h-48 bg-indigo-500/20 rounded-full blur-2xl" />
 
           <div className="relative">
             <h1 className="text-2xl lg:text-3xl font-bold mb-2">
