@@ -1,54 +1,74 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Sparkles } from "lucide-react";
 import { Button, Input, Card } from "@/components/ui";
-import { useTheme } from "@/contexts/ThemeContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { ApiError } from "@/lib/api";
 
-// Demo credentials
-const DEMO_EMAIL = "demo@reviewguro.com";
-const DEMO_PASSWORD = "demo123";
+// Test credentials from Postman collection
+const TEST_EMAIL = "tony_stark@gmail.com"; // "testuser@example.com";
+const TEST_PASSWORD = "TestPass123";
 
 export default function SignInPage() {
   const router = useRouter();
-  const { theme } = useTheme();
+  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.push("/dashboard");
+    }
+  }, [isAuthenticated, authLoading, router]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setIsLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // Check demo credentials
-    if (email === DEMO_EMAIL && password === DEMO_PASSWORD) {
-      // Store auth state (in real app, would be a token)
-      localStorage.setItem("reviewguro_auth", "true");
-      localStorage.setItem("reviewguro_user", JSON.stringify({
-        name: "Demo User",
-        email: DEMO_EMAIL,
-        avatar: null,
-      }));
+    try {
+      await login(email, password);
       router.push("/dashboard");
-    } else {
-      setError("Invalid email or password. Try the demo account!");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 401) {
+          setError("Invalid email or password. Please try again.");
+        } else if (err.status === 422) {
+          setError("Please enter a valid email and password.");
+        } else {
+          setError(err.message || "An error occurred. Please try again.");
+        }
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An error occurred. Please try again.");
+      }
+    } finally {
       setIsLoading(false);
     }
   };
 
-  const fillDemoCredentials = () => {
-    setEmail(DEMO_EMAIL);
-    setPassword(DEMO_PASSWORD);
+  const fillTestCredentials = () => {
+    setEmail(TEST_EMAIL);
+    setPassword(TEST_PASSWORD);
     setError("");
   };
+
+  // Show loading while checking auth status
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
@@ -79,9 +99,9 @@ export default function SignInPage() {
             </p>
           </div>
 
-          {/* Demo Account Banner */}
+          {/* Test Account Banner */}
           <button
-            onClick={fillDemoCredentials}
+            onClick={fillTestCredentials}
             className="w-full mb-6 p-4 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-100 dark:border-blue-800 hover:border-blue-200 dark:hover:border-blue-700 transition-colors group"
           >
             <div className="flex items-center gap-3">
@@ -90,10 +110,10 @@ export default function SignInPage() {
               </div>
               <div className="text-left flex-1">
                 <p className="font-medium text-slate-900 dark:text-white text-sm">
-                  Try Demo Account
+                  Try Test Account
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Click to auto-fill demo credentials
+                  Click to auto-fill test credentials
                 </p>
               </div>
               <ArrowRight size={16} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
@@ -177,7 +197,7 @@ export default function SignInPage() {
 
           <div className="mt-6 text-center">
             <p className="text-sm text-slate-600 dark:text-slate-400">
-              Don't have an account?{" "}
+              Don&apos;t have an account?{" "}
               <Link
                 href="/sign-up"
                 className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
@@ -188,10 +208,10 @@ export default function SignInPage() {
           </div>
         </Card>
 
-        {/* Demo credentials hint */}
+        {/* Test credentials hint */}
         <div className="mt-6 text-center">
           <p className="text-xs text-slate-500 dark:text-slate-500">
-            Demo: {DEMO_EMAIL} / {DEMO_PASSWORD}
+            Test: {TEST_EMAIL} / {TEST_PASSWORD}
           </p>
         </div>
       </div>

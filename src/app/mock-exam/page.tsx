@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   Clock,
@@ -17,43 +17,144 @@ import {
   BarChart3,
   RotateCcw,
   Home,
+  Loader2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge } from "@/components/ui";
-import { mockQuestions } from "@/lib/mock-data";
-import { Question, QuestionOption, getCategoryDisplayName } from "@/lib/types";
+import {
+  mockExamApi,
+  MockExamQuestion,
+  MockExamResultData,
+  DetailedExamResults,
+  categoryDisplayNames,
+} from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 type ExamState = "setup" | "in-progress" | "review" | "completed";
 
-interface ExamAnswer {
-  questionId: string;
-  selectedOptionId: string | null;
-  isFlagged: boolean;
+interface ExamConfig {
+  totalQuestions: number;
+  timeLimitMinutes: number;
+  passingScore: number;
 }
 
-const EXAM_DURATION_MINUTES = 10; // Shortened for demo (real exam would be 170 minutes)
+const DEFAULT_CONFIG: ExamConfig = {
+  totalQuestions: 170,
+  timeLimitMinutes: 170,
+  passingScore: 80,
+};
+
+// Preset options for exam configuration
+// Real CSE Professional: 170 questions, 170 minutes (3 hours 10 minutes)
+// Real CSE Sub-Professional: 165 questions, 165 minutes
+const QUESTION_OPTIONS = [20, 50, 100, 170];
+const TIME_OPTIONS = [
+  { questions: 20, time: 20 },
+  { questions: 50, time: 50 },
+  { questions: 100, time: 100 },
+  { questions: 170, time: 170 },
+];
 
 export default function MockExamPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+
+  // Exam state
   const [examState, setExamState] = useState<ExamState>("setup");
+  const [examId, setExamId] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<MockExamQuestion[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<ExamAnswer[]>([]);
-  const [timeRemaining, setTimeRemaining] = useState(EXAM_DURATION_MINUTES * 60);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [flaggedQuestions, setFlaggedQuestions] = useState<string[]>([]);
+  const [timeRemaining, setTimeRemaining] = useState(DEFAULT_CONFIG.timeLimitMinutes * 60);
   const [showNavigator, setShowNavigator] = useState(false);
-  const [examQuestions] = useState<Question[]>(mockQuestions);
+  const [config, setConfig] = useState<ExamConfig>(DEFAULT_CONFIG);
 
-  const currentQuestion = examQuestions[currentQuestionIndex];
+  // Results state
+  const [examResults, setExamResults] = useState<MockExamResultData | null>(null);
+  const [detailedResults, setDetailedResults] = useState<DetailedExamResults | null>(null);
 
-  // Initialize answers when exam starts
-  const startExam = () => {
-    const initialAnswers: ExamAnswer[] = examQuestions.map((q) => ({
-      questionId: q.id,
-      selectedOptionId: null,
-      isFlagged: false,
-    }));
-    setAnswers(initialAnswers);
-    setTimeRemaining(EXAM_DURATION_MINUTES * 60);
-    setCurrentQuestionIndex(0);
-    setExamState("in-progress");
+  // Loading states
+  const [isStarting, setIsStarting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingResults, setIsLoadingResults] = useState(false);
+  const [isCheckingActiveExam, setIsCheckingActiveExam] = useState(true);
+
+  // Ref to track if answer is being saved
+  const savingAnswerRef = useRef(false);
+
+  const currentQuestion = questions[currentQuestionIndex];
+
+  // Check for in-progress exam on page load
+  useEffect(() => {
+    async function checkForActiveExam() {
+      if (!isAuthenticated || authLoading) return;
+
+      setIsCheckingActiveExam(true);
+      try {
+        // Check if there's an in-progress exam
+        const historyResponse = await mockExamApi.getHistory({ status: "IN_PROGRESS", limit: 1 });
+
+        if (historyResponse.data?.exams && historyResponse.data.exams.length > 0) {
+          const activeExam = historyResponse.data.exams[0];
+
+          // Fetch full exam data including questions and answers
+          const examResponse = await mockExamApi.getExam(activeExam.examId);
+
+          if (examResponse.data) {
+            const examData = examResponse.data;
+
+            // Restore exam state
+            setExamId(examData.examId);
+            setQuestions(examData.questions);
+            setAnswers(examData.answers || {});
+            setFlaggedQuestions(examData.flaggedQuestions || []);
+            setTimeRemaining(examData.timeRemainingSeconds);
+            setConfig({
+              totalQuestions: examData.totalQuestions,
+              timeLimitMinutes: examData.timeLimitMinutes,
+              passingScore: examData.passingScore,
+            });
+            setExamState("in-progress");
+          }
+        }
+      } catch (error) {
+        console.error("Error checking for active exam:", error);
+      } finally {
+        setIsCheckingActiveExam(false);
+      }
+    }
+
+    checkForActiveExam();
+  }, [isAuthenticated, authLoading]);
+
+  // Start exam - create new mock exam via API
+  const startExam = async () => {
+    if (!isAuthenticated) return;
+
+    setIsStarting(true);
+    try {
+      const response = await mockExamApi.createExam({
+        totalQuestions: config.totalQuestions,
+        timeLimitMinutes: config.timeLimitMinutes,
+        passingScore: config.passingScore,
+        categories: "MIXED",
+      });
+
+      if (response.data) {
+        setExamId(response.data.examId);
+        setQuestions(response.data.questions);
+        setAnswers({});
+        setFlaggedQuestions([]);
+        setTimeRemaining(response.data.timeLimitMinutes * 60);
+        setCurrentQuestionIndex(0);
+        setExamState("in-progress");
+      }
+    } catch (error) {
+      console.error("Error starting exam:", error);
+      alert("Failed to start exam. Please try again.");
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   // Timer effect
@@ -63,7 +164,8 @@ export default function MockExamPage() {
     const timer = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
-          setExamState("completed");
+          // Auto-submit when time expires
+          handleSubmitExam();
           return 0;
         }
         return prev - 1;
@@ -80,32 +182,70 @@ export default function MockExamPage() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Get time color based on remaining time
-  const getTimeColor = () => {
-    const percentage = (timeRemaining / (EXAM_DURATION_MINUTES * 60)) * 100;
-    if (percentage <= 10) return "text-rose-600 dark:text-rose-400";
-    if (percentage <= 25) return "text-amber-600 dark:text-amber-400";
-    return "text-slate-900 dark:text-white";
+  // Get time styling based on remaining time
+  const getTimeStyles = () => {
+    const percentage = (timeRemaining / (config.timeLimitMinutes * 60)) * 100;
+    if (percentage <= 10) {
+      return {
+        container: "bg-rose-100 dark:bg-rose-900/50 border-2 border-rose-500 animate-pulse",
+        text: "text-rose-700 dark:text-rose-300",
+        icon: "text-rose-600 dark:text-rose-400"
+      };
+    }
+    if (percentage <= 25) {
+      return {
+        container: "bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-500",
+        text: "text-amber-700 dark:text-amber-300",
+        icon: "text-amber-600 dark:text-amber-400"
+      };
+    }
+    return {
+      container: "bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-500",
+      text: "text-blue-700 dark:text-blue-300",
+      icon: "text-blue-600 dark:text-blue-400"
+    };
   };
 
-  // Handle answer selection
-  const selectAnswer = (optionId: string) => {
-    setAnswers((prev) =>
-      prev.map((a) =>
-        a.questionId === currentQuestion.id
-          ? { ...a, selectedOptionId: optionId }
-          : a
-      )
-    );
+  const timeStyles = getTimeStyles();
+
+  // Handle answer selection - auto-save to API
+  const selectAnswer = async (optionId: string) => {
+    if (!examId || !currentQuestion || savingAnswerRef.current) return;
+
+    // Update local state immediately
+    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: optionId }));
+
+    // Save to API (debounced)
+    savingAnswerRef.current = true;
+    try {
+      await mockExamApi.saveAnswer(examId, currentQuestion.id, optionId);
+    } catch (error) {
+      console.error("Error saving answer:", error);
+    } finally {
+      savingAnswerRef.current = false;
+    }
   };
 
   // Toggle flag
-  const toggleFlag = () => {
-    setAnswers((prev) =>
-      prev.map((a) =>
-        a.questionId === currentQuestion.id ? { ...a, isFlagged: !a.isFlagged } : a
-      )
-    );
+  const toggleFlag = async () => {
+    if (!examId || !currentQuestion) return;
+
+    const isCurrentlyFlagged = flaggedQuestions.includes(currentQuestion.id);
+    const newFlagged = isCurrentlyFlagged
+      ? flaggedQuestions.filter((id) => id !== currentQuestion.id)
+      : [...flaggedQuestions, currentQuestion.id];
+
+    // Update local state immediately
+    setFlaggedQuestions(newFlagged);
+
+    // Save to API
+    try {
+      await mockExamApi.flagQuestion(examId, currentQuestion.id, !isCurrentlyFlagged);
+    } catch (error) {
+      console.error("Error flagging question:", error);
+      // Revert on error
+      setFlaggedQuestions(flaggedQuestions);
+    }
   };
 
   // Navigation
@@ -115,7 +255,7 @@ export default function MockExamPage() {
   };
 
   const goNext = () => {
-    if (currentQuestionIndex < examQuestions.length - 1) {
+    if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex((prev) => prev + 1);
     }
   };
@@ -127,39 +267,74 @@ export default function MockExamPage() {
   };
 
   // Submit exam
-  const submitExam = () => {
-    setExamState("completed");
+  const handleSubmitExam = async () => {
+    if (!examId || isSubmitting) return;
+
+    setIsSubmitting(true);
+    try {
+      const response = await mockExamApi.submitExam(examId);
+      if (response.data) {
+        setExamResults(response.data);
+        setExamState("completed");
+      }
+    } catch (error) {
+      console.error("Error submitting exam:", error);
+      alert("Failed to submit exam. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // Calculate results
-  const calculateResults = useCallback(() => {
-    let correct = 0;
-    let incorrect = 0;
-    let unanswered = 0;
+  // Load detailed results for review
+  const loadDetailedResults = async () => {
+    if (!examId) return;
 
-    answers.forEach((answer) => {
-      const question = examQuestions.find((q) => q.id === answer.questionId);
-      if (!question) return;
-
-      if (!answer.selectedOptionId) {
-        unanswered++;
-      } else if (answer.selectedOptionId === question.correctAnswerId) {
-        correct++;
-      } else {
-        incorrect++;
+    setIsLoadingResults(true);
+    try {
+      const response = await mockExamApi.getResults(examId);
+      if (response.data) {
+        setDetailedResults(response.data);
+        setExamState("review");
       }
-    });
+    } catch (error) {
+      console.error("Error loading results:", error);
+      alert("Failed to load results. Please try again.");
+    } finally {
+      setIsLoadingResults(false);
+    }
+  };
 
-    const score = Math.round((correct / examQuestions.length) * 100);
-    const passed = score >= 80;
-
-    return { correct, incorrect, unanswered, score, passed };
-  }, [answers, examQuestions]);
+  // Reset for new exam
+  const resetExam = () => {
+    setExamId(null);
+    setQuestions([]);
+    setAnswers({});
+    setFlaggedQuestions([]);
+    setExamResults(null);
+    setDetailedResults(null);
+    setCurrentQuestionIndex(0);
+    setTimeRemaining(config.timeLimitMinutes * 60);
+    setExamState("setup");
+  };
 
   // Get current answer
   const getCurrentAnswer = () => {
-    return answers.find((a) => a.questionId === currentQuestion?.id);
+    return currentQuestion ? answers[currentQuestion.id] : null;
   };
+
+  // Loading state
+  if (authLoading || isCheckingActiveExam) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="ml-3 text-slate-600 dark:text-slate-400">
+            {isCheckingActiveExam ? "Checking for active exam..." : "Loading..."}
+          </span>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   // Setup Screen
   if (examState === "setup") {
@@ -179,31 +354,57 @@ export default function MockExamPage() {
           </div>
 
           <Card className="mb-6">
-            <CardTitle className="mb-4">Exam Details</CardTitle>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between py-3 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-600 dark:text-slate-400">Total Questions</span>
-                <span className="font-semibold text-slate-900 dark:text-white">
-                  {examQuestions.length} questions
-                </span>
+            <CardTitle className="mb-4">Exam Configuration</CardTitle>
+            <div className="space-y-6">
+              {/* Question Count Selector */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                  Number of Questions
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {QUESTION_OPTIONS.map((num) => (
+                    <button
+                      key={num}
+                      onClick={() => {
+                        const timeOption = TIME_OPTIONS.find((t) => t.questions === num);
+                        setConfig({
+                          ...config,
+                          totalQuestions: num,
+                          timeLimitMinutes: timeOption?.time || num * 1.2,
+                        });
+                      }}
+                      className={`py-3 px-4 rounded-lg text-sm font-medium transition-all ${
+                        config.totalQuestions === num
+                          ? "bg-blue-600 text-white"
+                          : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                      }`}
+                    >
+                      {num}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex items-center justify-between py-3 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-600 dark:text-slate-400">Time Limit</span>
-                <span className="font-semibold text-slate-900 dark:text-white">
-                  {EXAM_DURATION_MINUTES} minutes
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-3 border-b border-slate-100 dark:border-slate-800">
-                <span className="text-slate-600 dark:text-slate-400">Passing Score</span>
-                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                  80%
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-3">
-                <span className="text-slate-600 dark:text-slate-400">Categories</span>
-                <span className="font-semibold text-slate-900 dark:text-white">
-                  Mixed
-                </span>
+
+              {/* Summary */}
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Time Limit</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">
+                    {config.timeLimitMinutes} minutes
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Passing Score</span>
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                    {config.passingScore}%
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Categories</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">
+                    Mixed (All Categories)
+                  </span>
+                </div>
               </div>
             </div>
           </Card>
@@ -220,12 +421,20 @@ export default function MockExamPage() {
                   <li>• You can flag questions to review later</li>
                   <li>• Use the navigator to jump between questions</li>
                   <li>• Unanswered questions count as incorrect</li>
+                  <li>• Answers are auto-saved as you select them</li>
                 </ul>
               </div>
             </div>
           </Card>
 
-          <Button size="lg" fullWidth icon={Play} onClick={startExam}>
+          <Button
+            size="lg"
+            fullWidth
+            icon={Play}
+            onClick={startExam}
+            isLoading={isStarting}
+            disabled={!isAuthenticated}
+          >
             Start Mock Exam
           </Button>
         </div>
@@ -234,31 +443,29 @@ export default function MockExamPage() {
   }
 
   // Completed Screen
-  if (examState === "completed") {
-    const results = calculateResults();
-
+  if (examState === "completed" && examResults) {
     return (
       <DashboardLayout>
         <div className="max-w-2xl mx-auto">
           <div className="text-center mb-8">
             <div
               className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 ${
-                results.passed
+                examResults.passed
                   ? "bg-emerald-100 dark:bg-emerald-900/30"
                   : "bg-rose-100 dark:bg-rose-900/30"
               }`}
             >
-              {results.passed ? (
+              {examResults.passed ? (
                 <Trophy size={40} className="text-emerald-600 dark:text-emerald-400" />
               ) : (
                 <Target size={40} className="text-rose-600 dark:text-rose-400" />
               )}
             </div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-              {results.passed ? "Congratulations!" : "Keep Practicing!"}
+              {examResults.passed ? "Congratulations!" : "Keep Practicing!"}
             </h1>
             <p className="text-slate-600 dark:text-slate-400">
-              {results.passed
+              {examResults.passed
                 ? "You passed the mock examination!"
                 : "You didn't reach the passing score this time."}
             </p>
@@ -269,19 +476,19 @@ export default function MockExamPage() {
             <div className="text-center py-6">
               <div
                 className={`text-6xl font-bold mb-2 ${
-                  results.passed
+                  examResults.passed
                     ? "text-emerald-600 dark:text-emerald-400"
                     : "text-rose-600 dark:text-rose-400"
                 }`}
               >
-                {results.score}%
+                {examResults.score}%
               </div>
               <p className="text-slate-500 dark:text-slate-400">Your Score</p>
               <Badge
-                variant={results.passed ? "success" : "danger"}
+                variant={examResults.passed ? "success" : "danger"}
                 className="mt-3"
               >
-                {results.passed ? "PASSED" : "FAILED"} (80% required)
+                {examResults.passed ? "PASSED" : "FAILED"} ({examResults.passingScore}% required)
               </Badge>
             </div>
           </Card>
@@ -290,23 +497,31 @@ export default function MockExamPage() {
           <div className="grid grid-cols-3 gap-4 mb-6">
             <Card className="text-center" padding="sm">
               <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                {results.correct}
+                {examResults.correctAnswers}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">Correct</p>
             </Card>
             <Card className="text-center" padding="sm">
               <div className="text-2xl font-bold text-rose-600 dark:text-rose-400">
-                {results.incorrect}
+                {examResults.incorrectAnswers}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">Incorrect</p>
             </Card>
             <Card className="text-center" padding="sm">
               <div className="text-2xl font-bold text-slate-400">
-                {results.unanswered}
+                {examResults.unansweredQuestions}
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">Unanswered</p>
             </Card>
           </div>
+
+          {/* Time Spent */}
+          <Card className="mb-6 text-center" padding="sm">
+            <p className="text-sm text-slate-500 dark:text-slate-400">Time Spent</p>
+            <p className="text-lg font-semibold text-slate-900 dark:text-white">
+              {examResults.timeSpentMinutes} minutes
+            </p>
+          </Card>
 
           {/* Actions */}
           <div className="space-y-3">
@@ -314,11 +529,12 @@ export default function MockExamPage() {
               fullWidth
               variant="outline"
               icon={BarChart3}
-              onClick={() => setExamState("review")}
+              onClick={loadDetailedResults}
+              isLoading={isLoadingResults}
             >
               Review Answers
             </Button>
-            <Button fullWidth icon={RotateCcw} onClick={() => setExamState("setup")}>
+            <Button fullWidth icon={RotateCcw} onClick={resetExam}>
               Take Another Exam
             </Button>
             <Link href="/dashboard">
@@ -333,7 +549,7 @@ export default function MockExamPage() {
   }
 
   // Review Screen
-  if (examState === "review") {
+  if (examState === "review" && detailedResults) {
     return (
       <DashboardLayout>
         <div className="max-w-4xl mx-auto">
@@ -352,19 +568,17 @@ export default function MockExamPage() {
           </div>
 
           <div className="space-y-4">
-            {examQuestions.map((question, index) => {
-              const answer = answers.find((a) => a.questionId === question.id);
-              const isCorrect = answer?.selectedOptionId === question.correctAnswerId;
-              const wasAnswered = !!answer?.selectedOptionId;
+            {detailedResults.questions.map((question, index) => {
+              const wasAnswered = !!question.selectedOptionId;
 
               return (
-                <Card key={question.id} padding="lg">
+                <Card key={question.questionId} padding="lg">
                   <div className="flex items-start gap-4">
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                         !wasAnswered
                           ? "bg-slate-100 dark:bg-slate-800"
-                          : isCorrect
+                          : question.isCorrect
                             ? "bg-emerald-100 dark:bg-emerald-900/30"
                             : "bg-rose-100 dark:bg-rose-900/30"
                       }`}
@@ -373,7 +587,7 @@ export default function MockExamPage() {
                         <span className="text-sm font-medium text-slate-500">
                           {index + 1}
                         </span>
-                      ) : isCorrect ? (
+                      ) : question.isCorrect ? (
                         <CheckCircle2
                           size={18}
                           className="text-emerald-600 dark:text-emerald-400"
@@ -383,25 +597,14 @@ export default function MockExamPage() {
                       )}
                     </div>
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="default" size="sm">
-                          {getCategoryDisplayName(question.category)}
-                        </Badge>
-                        {answer?.isFlagged && (
-                          <Badge variant="warning" size="sm">
-                            Flagged
-                          </Badge>
-                        )}
-                      </div>
                       <p className="text-slate-900 dark:text-white mb-3">
-                        {question.text}
+                        {question.questionText}
                       </p>
 
                       <div className="space-y-2">
-                        {question.options.map((option: QuestionOption) => {
-                          const isSelected = answer?.selectedOptionId === option.id;
-                          const isCorrectOption =
-                            option.id === question.correctAnswerId;
+                        {question.options.map((option) => {
+                          const isSelected = question.selectedOptionId === option.id;
+                          const isCorrectOption = option.id === question.correctOptionId;
 
                           return (
                             <div
@@ -423,7 +626,7 @@ export default function MockExamPage() {
                                       : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
                                 }`}
                               >
-                                {option.label}
+                                {option.id.toUpperCase()}
                               </span>
                               <span
                                 className={
@@ -447,12 +650,14 @@ export default function MockExamPage() {
                         })}
                       </div>
 
-                      <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                        <p className="text-sm text-blue-800 dark:text-blue-200">
-                          <span className="font-medium">Explanation: </span>
-                          {question.explanation}
-                        </p>
-                      </div>
+                      {question.explanation && (
+                        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                          <p className="text-sm text-blue-800 dark:text-blue-200">
+                            <span className="font-medium">Explanation: </span>
+                            {question.explanation}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -465,7 +670,18 @@ export default function MockExamPage() {
   }
 
   // In-Progress Screen
+  if (!currentQuestion) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   const currentAnswer = getCurrentAnswer();
+  const isFlagged = flaggedQuestions.includes(currentQuestion.id);
 
   return (
     <DashboardLayout>
@@ -475,17 +691,17 @@ export default function MockExamPage() {
           <div className="flex items-center gap-4">
             <Badge variant="primary">Mock Exam</Badge>
             <span className="text-sm text-slate-600 dark:text-slate-400">
-              Question {currentQuestionIndex + 1} of {examQuestions.length}
+              Question {currentQuestionIndex + 1} of {questions.length}
             </span>
           </div>
 
           <div className="flex items-center gap-4">
-            {/* Timer */}
+            {/* Timer - Prominent display */}
             <div
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 ${getTimeColor()}`}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl shadow-md ${timeStyles.container}`}
             >
-              <Clock size={18} />
-              <span className="font-mono font-bold text-lg">
+              <Clock size={20} className={timeStyles.icon} />
+              <span className={`font-mono font-bold text-xl tracking-wide ${timeStyles.text}`}>
                 {formatTime(timeRemaining)}
               </span>
             </div>
@@ -507,10 +723,9 @@ export default function MockExamPage() {
           <Card className="mb-6 animate-fade-in">
             <CardTitle className="mb-4">Question Navigator</CardTitle>
             <div className="grid grid-cols-10 gap-2">
-              {examQuestions.map((q, index) => {
-                const answer = answers.find((a) => a.questionId === q.id);
-                const isAnswered = !!answer?.selectedOptionId;
-                const isFlagged = answer?.isFlagged;
+              {questions.map((q, index) => {
+                const isAnswered = !!answers[q.id];
+                const isQuestionFlagged = flaggedQuestions.includes(q.id);
                 const isCurrent = index === currentQuestionIndex;
 
                 return (
@@ -529,7 +744,7 @@ export default function MockExamPage() {
                     `}
                   >
                     {index + 1}
-                    {isFlagged && (
+                    {isQuestionFlagged && (
                       <span className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full" />
                     )}
                   </button>
@@ -557,25 +772,25 @@ export default function MockExamPage() {
         <Card padding="lg" className="mb-6">
           <div className="flex items-center justify-between mb-4">
             <Badge variant="default">
-              {getCategoryDisplayName(currentQuestion.category)}
+              {categoryDisplayNames[currentQuestion.category]}
             </Badge>
             <Button
-              variant={currentAnswer?.isFlagged ? "danger" : "ghost"}
+              variant={isFlagged ? "danger" : "ghost"}
               size="sm"
               icon={Flag}
               onClick={toggleFlag}
             >
-              {currentAnswer?.isFlagged ? "Flagged" : "Flag"}
+              {isFlagged ? "Flagged" : "Flag"}
             </Button>
           </div>
 
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6 leading-relaxed">
-            {currentQuestion.text}
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white mb-6 leading-relaxed whitespace-pre-line">
+            {currentQuestion.questionText}
           </h2>
 
           <div className="space-y-3">
-            {currentQuestion.options.map((option: QuestionOption) => {
-              const isSelected = currentAnswer?.selectedOptionId === option.id;
+            {currentQuestion.options.map((option) => {
+              const isSelected = currentAnswer === option.id;
 
               return (
                 <button
@@ -600,7 +815,7 @@ export default function MockExamPage() {
                       }
                     `}
                   >
-                    {option.label}
+                    {option.id.toUpperCase()}
                   </span>
                   <span
                     className={`text-base ${
@@ -629,8 +844,12 @@ export default function MockExamPage() {
           </Button>
 
           <div className="flex items-center gap-3">
-            {currentQuestionIndex === examQuestions.length - 1 ? (
-              <Button variant="primary" onClick={submitExam}>
+            {currentQuestionIndex === questions.length - 1 ? (
+              <Button
+                variant="primary"
+                onClick={handleSubmitExam}
+                isLoading={isSubmitting}
+              >
                 Submit Exam
               </Button>
             ) : (
@@ -650,19 +869,14 @@ export default function MockExamPage() {
           <div className="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400 mb-2">
             <span>Progress</span>
             <span>
-              {answers.filter((a) => a.selectedOptionId).length} of{" "}
-              {examQuestions.length} answered
+              {Object.keys(answers).length} of {questions.length} answered
             </span>
           </div>
           <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
             <div
               className="h-full bg-blue-600 rounded-full transition-all duration-300"
               style={{
-                width: `${
-                  (answers.filter((a) => a.selectedOptionId).length /
-                    examQuestions.length) *
-                  100
-                }%`,
+                width: `${(Object.keys(answers).length / questions.length) * 100}%`,
               }}
             />
           </div>

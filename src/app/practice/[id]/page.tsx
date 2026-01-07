@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  ArrowRight,
   Flag,
   Lightbulb,
   MessageCircle,
@@ -18,73 +17,234 @@ import {
   ChevronRight,
   Brain,
   Sparkles,
+  Loader2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, Badge, Textarea } from "@/components/ui";
-import { mockQuestions, getQuestionById } from "@/lib/mock-data";
 import {
+  questionsApi,
+  practiceApi,
   Question,
-  QuestionOption,
-  TutorMessage,
-  getCategoryDisplayName,
-  getDifficultyColor,
-} from "@/lib/types";
+  categoryDisplayNames,
+  difficultyColors,
+} from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 type AnswerState = "unanswered" | "correct" | "incorrect";
 
+interface TutorMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+}
+
 interface TutorState {
   showHint: boolean;
+  hintText: string;
   showExplanation: boolean;
+  explanation: string;
   messages: TutorMessage[];
   isTyping: boolean;
+}
+
+// Store answered questions' state to retain highlighting when navigating back
+interface AnsweredQuestion {
+  selectedOption: string;
+  answerState: AnswerState;
+  correctOptionId: string;
+  explanation: string;
+  isFlagged: boolean;
 }
 
 export default function PracticePage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const questionId = params.id as string;
+  const categoryFilter = searchParams.get("category") as Question["category"] | null;
+
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
 
   const [question, setQuestion] = useState<Question | null>(null);
+  const [allQuestions, setAllQuestions] = useState<Question[]>([]);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [answerState, setAnswerState] = useState<AnswerState>("unanswered");
+  const [correctOptionId, setCorrectOptionId] = useState<string | null>(null);
   const [isFlagged, setIsFlagged] = useState(false);
-  const [timeSpent, setTimeSpent] = useState(0);
+  const [sessionStartTime] = useState(() => {
+    // Try to restore session start time from sessionStorage
+    if (typeof window !== "undefined") {
+      const stored = sessionStorage.getItem("practice_session_start");
+      if (stored) return parseInt(stored, 10);
+      const now = Date.now();
+      sessionStorage.setItem("practice_session_start", now.toString());
+      return now;
+    }
+    return Date.now();
+  });
+  const [timeSpent, setTimeSpent] = useState(() => {
+    // Calculate initial time based on session start
+    if (typeof window !== "undefined") {
+      const stored = sessionStorage.getItem("practice_session_start");
+      if (stored) {
+        return Math.floor((Date.now() - parseInt(stored, 10)) / 1000);
+      }
+    }
+    return 0;
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [tutorState, setTutorState] = useState<TutorState>({
     showHint: false,
+    hintText: "",
     showExplanation: false,
+    explanation: "",
     messages: [],
     isTyping: false,
   });
   const [chatInput, setChatInput] = useState("");
 
-  // Get current question index
-  const currentIndex = mockQuestions.findIndex((q) => q.id === questionId);
-  const totalQuestions = mockQuestions.length;
+  // Generate a storage key that includes category filter for separate sessions
+  const storageKey = `practice_answered_questions${categoryFilter ? `_${categoryFilter}` : ""}`;
 
-  useEffect(() => {
-    const q = getQuestionById(questionId);
-    if (q) {
-      setQuestion(q);
-      // Reset state for new question
-      setSelectedOption(null);
-      setAnswerState("unanswered");
-      setTutorState({
-        showHint: false,
-        showExplanation: false,
-        messages: [],
-        isTyping: false,
-      });
-      setTimeSpent(0);
+  // Initialize ref with data from sessionStorage immediately (not in useEffect)
+  const getInitialAnswers = (): Record<string, AnsweredQuestion> => {
+    if (typeof window === "undefined") return {};
+    try {
+      const stored = sessionStorage.getItem(storageKey);
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
     }
-  }, [questionId]);
+  };
 
-  // Timer
+  // Use ref to persist answered questions across navigation without causing re-renders
+  const answeredQuestionsRef = useRef<Record<string, AnsweredQuestion>>(getInitialAnswers());
+
+  // Sync ref with sessionStorage whenever storageKey changes (e.g., when category changes)
+  useEffect(() => {
+    const stored = sessionStorage.getItem(storageKey);
+    if (stored) {
+      try {
+        answeredQuestionsRef.current = JSON.parse(stored);
+      } catch (e) {
+        console.error("Failed to parse stored answers:", e);
+      }
+    } else {
+      answeredQuestionsRef.current = {};
+    }
+  }, [storageKey]);
+
+  // Load questions - only fetch if we don't have them yet or category changed
+  useEffect(() => {
+    async function fetchQuestions() {
+      if (!isAuthenticated) return;
+
+      // Check if we already have questions loaded for this category
+      const needsFetch = allQuestions.length === 0 ||
+        (categoryFilter && !allQuestions.some(q => q.category === categoryFilter));
+
+      if (needsFetch) {
+        setIsLoading(true);
+        try {
+          const response = await questionsApi.getQuestions({
+            category: categoryFilter || undefined,
+            limit: 50,
+          });
+
+          if (response.data && response.data.length > 0) {
+            setAllQuestions(response.data);
+
+            // Find the current question
+            const currentQ = response.data.find((q) => q.id === questionId);
+            if (currentQ) {
+              setQuestion(currentQ);
+            } else {
+              // If question ID not found, use first question
+              setQuestion(response.data[0]);
+              router.replace(`/practice/${response.data[0].id}${categoryFilter ? `?category=${categoryFilter}` : ""}`);
+            }
+          }
+        } catch (error) {
+          console.error("Error fetching questions:", error);
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        // We already have questions, just find the current one
+        const currentQ = allQuestions.find((q) => q.id === questionId);
+        if (currentQ) {
+          setQuestion(currentQ);
+        }
+        setIsLoading(false);
+      }
+    }
+
+    if (!authLoading) {
+      fetchQuestions();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading, categoryFilter, questionId, router]);
+
+  // Reset or restore state when question changes
+  useEffect(() => {
+    if (question) {
+      // Load from sessionStorage first to ensure we have the latest data
+      const stored = sessionStorage.getItem(storageKey);
+      if (stored) {
+        try {
+          answeredQuestionsRef.current = JSON.parse(stored);
+        } catch (e) {
+          console.error("Failed to parse stored answers:", e);
+        }
+      }
+
+      // Check if this question was previously answered
+      const previousAnswer = answeredQuestionsRef.current[question.id];
+
+      if (previousAnswer) {
+        // Restore the previous answer state
+        setSelectedOption(previousAnswer.selectedOption);
+        setAnswerState(previousAnswer.answerState);
+        setCorrectOptionId(previousAnswer.correctOptionId);
+        setIsFlagged(previousAnswer.isFlagged || false);
+        setTutorState({
+          showHint: false,
+          hintText: "",
+          showExplanation: true,
+          explanation: previousAnswer.explanation,
+          messages: [],
+          isTyping: false,
+        });
+      } else {
+        // Reset state for new/unanswered questions
+        setSelectedOption(null);
+        setAnswerState("unanswered");
+        setCorrectOptionId(null);
+        setIsFlagged(false);
+        setTutorState({
+          showHint: false,
+          hintText: "",
+          showExplanation: false,
+          explanation: "",
+          messages: [],
+          isTyping: false,
+        });
+      }
+    }
+  }, [question?.id, storageKey]);
+
+  // Session timer - continuous across questions
   useEffect(() => {
     const timer = setInterval(() => {
-      setTimeSpent((prev) => prev + 1);
+      setTimeSpent(Math.floor((Date.now() - sessionStartTime) / 1000));
     }, 1000);
     return () => clearInterval(timer);
-  }, [questionId]);
+  }, [sessionStartTime]);
+
+  const currentIndex = allQuestions.findIndex((q) => q.id === questionId);
+  const totalQuestions = allQuestions.length;
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -97,21 +257,133 @@ export default function PracticePage() {
     setSelectedOption(optionId);
   };
 
-  const handleSubmitAnswer = () => {
+  const handleSubmitAnswer = async () => {
     if (!selectedOption || !question) return;
 
-    const isCorrect = selectedOption === question.correctAnswerId;
-    setAnswerState(isCorrect ? "correct" : "incorrect");
-    setTutorState((prev) => ({ ...prev, showExplanation: true }));
+    setIsSubmitting(true);
+    try {
+      const response = await practiceApi.submitAnswer(question.id, selectedOption);
+
+      if (response.data) {
+        const newAnswerState = response.data.isCorrect ? "correct" : "incorrect";
+        setAnswerState(newAnswerState);
+        setCorrectOptionId(response.data.correctOptionId);
+        setTutorState((prev) => ({
+          ...prev,
+          showExplanation: true,
+          explanation: response.data.explanation,
+        }));
+
+        // Save the answer to ref and sessionStorage to retain state when navigating back
+        answeredQuestionsRef.current[question.id] = {
+          selectedOption,
+          answerState: newAnswerState,
+          correctOptionId: response.data.correctOptionId,
+          explanation: response.data.explanation,
+          isFlagged,
+        };
+        sessionStorage.setItem(storageKey, JSON.stringify(answeredQuestionsRef.current));
+      }
+    } catch (error) {
+      console.error("Error submitting answer:", error);
+      // Fallback to basic feedback
+      setAnswerState("incorrect");
+      setTutorState((prev) => ({
+        ...prev,
+        showExplanation: true,
+        explanation: "Unable to load explanation. Please try again.",
+      }));
+
+      // Save the fallback answer state too
+      answeredQuestionsRef.current[question.id] = {
+        selectedOption,
+        answerState: "incorrect",
+        correctOptionId: "",
+        explanation: "Unable to load explanation. Please try again.",
+        isFlagged,
+      };
+      sessionStorage.setItem(storageKey, JSON.stringify(answeredQuestionsRef.current));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleShowHint = () => {
-    if (!question?.hint) return;
-    setTutorState((prev) => ({ ...prev, showHint: true }));
+  const handleToggleFlag = () => {
+    if (!question) return;
+
+    const newFlaggedState = !isFlagged;
+    setIsFlagged(newFlaggedState);
+
+    // Update sessionStorage to persist flag state
+    const existingAnswer = answeredQuestionsRef.current[question.id];
+    if (existingAnswer) {
+      answeredQuestionsRef.current[question.id] = {
+        ...existingAnswer,
+        isFlagged: newFlaggedState,
+      };
+    } else {
+      // Store just the flag for unanswered questions
+      answeredQuestionsRef.current[question.id] = {
+        selectedOption: "",
+        answerState: "unanswered",
+        correctOptionId: "",
+        explanation: "",
+        isFlagged: newFlaggedState,
+      };
+    }
+    sessionStorage.setItem(storageKey, JSON.stringify(answeredQuestionsRef.current));
   };
 
-  const handleSendMessage = () => {
-    if (!chatInput.trim()) return;
+  const handleGetHint = async () => {
+    if (!question) return;
+
+    // If question already has a hint, use it directly
+    if (question.hint) {
+      setTutorState((prev) => ({
+        ...prev,
+        showHint: true,
+        hintText: question.hint || "",
+        isTyping: false,
+      }));
+      return;
+    }
+
+    setTutorState((prev) => ({ ...prev, isTyping: true, showHint: true }));
+
+    try {
+      // Try to get hint from dedicated hint API
+      const response = await practiceApi.getHint(question.id);
+      if (response.data?.hint) {
+        setTutorState((prev) => ({
+          ...prev,
+          showHint: true,
+          hintText: response.data.hint,
+          isTyping: false,
+        }));
+        return;
+      }
+    } catch (error) {
+      console.error("Error getting hint from API:", error);
+    }
+
+    // Provide a fallback hint based on the question category
+    const fallbackHints: Record<string, string> = {
+      VERBAL_ABILITY: "Focus on the context and meaning of words. Look for synonyms, antonyms, or relationships between concepts.",
+      NUMERICAL_ABILITY: "Break down the problem step by step. Identify what values you have and what you need to find.",
+      ANALYTICAL_ABILITY: "Look for patterns and logical relationships. Consider what must be true based on the given information.",
+      GENERAL_INFORMATION: "Think about what you know about Philippine history, government, and current events.",
+      CLERICAL_ABILITY: "Pay close attention to details like spelling, alphabetical order, and numerical sequences.",
+    };
+    setTutorState((prev) => ({
+      ...prev,
+      showHint: true,
+      hintText: fallbackHints[question.category] || "Read the question carefully and eliminate obviously wrong answers first.",
+      isTyping: false,
+    }));
+  };
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim() || !question) return;
 
     const userMessage: TutorMessage = {
       id: `msg-${Date.now()}`,
@@ -127,18 +399,13 @@ export default function PracticePage() {
     }));
     setChatInput("");
 
-    // Simulate AI response
-    setTimeout(() => {
-      const aiResponses = [
-        "Great question! Let me explain this concept further. The key to solving this type of problem is to break it down into smaller, manageable steps. First, identify what information you're given, then determine what you need to find.",
-        "I understand your confusion. This is a common area where many students struggle. Think of it this way: the question is testing your ability to apply logical reasoning. Start by eliminating obviously wrong answers.",
-        "That's a thoughtful follow-up! To deepen your understanding, consider practicing similar problems. The pattern here is consistent across many Civil Service Exam questions.",
-      ];
-
+    // Get AI explanation for the question
+    try {
+      const response = await practiceApi.getExplanation(question.id);
       const aiMessage: TutorMessage = {
         id: `msg-${Date.now()}`,
         role: "assistant",
-        content: aiResponses[Math.floor(Math.random() * aiResponses.length)],
+        content: response.data?.explanation || "I can help you understand this question better. The key is to analyze each option carefully and apply the relevant concepts.",
         timestamp: new Date().toISOString(),
       };
 
@@ -147,15 +414,39 @@ export default function PracticePage() {
         messages: [...prev.messages, aiMessage],
         isTyping: false,
       }));
-    }, 1500);
+    } catch {
+      const aiMessage: TutorMessage = {
+        id: `msg-${Date.now()}`,
+        role: "assistant",
+        content: "I'm here to help! Let me explain this concept. Focus on the key details in the question and eliminate obviously incorrect options first.",
+        timestamp: new Date().toISOString(),
+      };
+
+      setTutorState((prev) => ({
+        ...prev,
+        messages: [...prev.messages, aiMessage],
+        isTyping: false,
+      }));
+    }
   };
 
   const navigateToQuestion = (direction: "prev" | "next") => {
     const newIndex = direction === "prev" ? currentIndex - 1 : currentIndex + 1;
     if (newIndex >= 0 && newIndex < totalQuestions) {
-      router.push(`/practice/${mockQuestions[newIndex].id}`);
+      const nextQuestion = allQuestions[newIndex];
+      router.push(`/practice/${nextQuestion.id}${categoryFilter ? `?category=${categoryFilter}` : ""}`);
     }
   };
+
+  if (authLoading || isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   if (!question) {
     return (
@@ -172,8 +463,8 @@ export default function PracticePage() {
             <p className="text-slate-500 dark:text-slate-400 mb-4">
               The question you&apos;re looking for doesn&apos;t exist.
             </p>
-            <Link href="/dashboard">
-              <Button>Return to Dashboard</Button>
+            <Link href="/practice">
+              <Button>Return to Practice</Button>
             </Link>
           </div>
         </div>
@@ -181,42 +472,50 @@ export default function PracticePage() {
     );
   }
 
+  const difficultyStyle = difficultyColors[question.difficulty];
+
   return (
     <DashboardLayout>
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
           <div className="flex items-center gap-4">
-            <Link href="/dashboard">
+            <Link href="/practice">
               <Button variant="ghost" size="sm" icon={ArrowLeft}>
                 Exit
               </Button>
             </Link>
             <div className="h-6 w-px bg-slate-200 dark:bg-slate-700" />
             <div className="flex items-center gap-2">
-              <Badge variant="primary">{getCategoryDisplayName(question.category)}</Badge>
-              <Badge className={getDifficultyColor(question.difficulty)}>
-                {question.difficulty.charAt(0).toUpperCase() +
-                  question.difficulty.slice(1)}
+              <Badge variant="primary">
+                {categoryDisplayNames[question.category]}
+              </Badge>
+              <Badge className={`${difficultyStyle.bg} ${difficultyStyle.text}`}>
+                {question.difficulty}
               </Badge>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-              <Clock size={16} />
-              <span>{formatTime(timeSpent)}</span>
+            {/* Session Timer */}
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-300 dark:border-emerald-700">
+              <Clock size={14} className="text-emerald-600 dark:text-emerald-400" />
+              <span className="font-mono font-semibold text-sm text-emerald-700 dark:text-emerald-300">
+                {formatTime(timeSpent)}
+              </span>
             </div>
-            <div className="flex items-center gap-1 text-sm font-medium text-slate-700 dark:text-slate-300">
-              <span>{currentIndex + 1}</span>
-              <span className="text-slate-400">/</span>
-              <span>{totalQuestions}</span>
-            </div>
+            {totalQuestions > 0 && (
+              <div className="flex items-center gap-1 text-sm font-medium text-slate-700 dark:text-slate-300">
+                <span>{currentIndex + 1}</span>
+                <span className="text-slate-400">/</span>
+                <span>{totalQuestions}</span>
+              </div>
+            )}
             <Button
               variant={isFlagged ? "danger" : "outline"}
               size="sm"
               icon={Flag}
-              onClick={() => setIsFlagged(!isFlagged)}
+              onClick={handleToggleFlag}
             >
               {isFlagged ? "Flagged" : "Flag"}
             </Button>
@@ -229,16 +528,16 @@ export default function PracticePage() {
           <div className="space-y-6">
             <Card padding="lg">
               <div className="mb-6">
-                <h2 className="text-xl font-semibold text-slate-900 dark:text-white leading-relaxed">
-                  {question.text}
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-white leading-relaxed whitespace-pre-line">
+                  {question.questionText}
                 </h2>
               </div>
 
               {/* Options */}
               <div className="space-y-3">
-                {question.options.map((option: QuestionOption) => {
+                {question.options.map((option) => {
                   const isSelected = selectedOption === option.id;
-                  const isCorrect = option.id === question.correctAnswerId;
+                  const isCorrect = correctOptionId === option.id;
                   const showResult = answerState !== "unanswered";
 
                   let optionClasses =
@@ -246,9 +545,11 @@ export default function PracticePage() {
 
                   if (showResult) {
                     if (isCorrect) {
+                      // Always highlight the correct answer in green
                       optionClasses +=
                         "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20";
-                    } else if (isSelected && !isCorrect) {
+                    } else if (isSelected && answerState === "incorrect") {
+                      // Highlight wrong selection in red
                       optionClasses +=
                         "border-rose-500 bg-rose-50 dark:bg-rose-900/20";
                     } else {
@@ -277,7 +578,7 @@ export default function PracticePage() {
                         ${
                           showResult && isCorrect
                             ? "bg-emerald-500 text-white"
-                            : showResult && isSelected && !isCorrect
+                            : showResult && isSelected && answerState === "incorrect"
                               ? "bg-rose-500 text-white"
                               : isSelected
                                 ? "bg-blue-600 text-white"
@@ -287,17 +588,17 @@ export default function PracticePage() {
                       >
                         {showResult && isCorrect ? (
                           <Check size={16} />
-                        ) : showResult && isSelected && !isCorrect ? (
+                        ) : showResult && isSelected && answerState === "incorrect" ? (
                           <X size={16} />
                         ) : (
-                          option.label
+                          option.id.toUpperCase()
                         )}
                       </div>
                       <span
                         className={`text-base pt-1 ${
                           showResult && isCorrect
                             ? "text-emerald-900 dark:text-emerald-100 font-medium"
-                            : showResult && isSelected && !isCorrect
+                            : showResult && isSelected && answerState === "incorrect"
                               ? "text-rose-900 dark:text-rose-100"
                               : "text-slate-700 dark:text-slate-300"
                         }`}
@@ -316,6 +617,7 @@ export default function PracticePage() {
                     fullWidth
                     size="lg"
                     disabled={!selectedOption}
+                    isLoading={isSubmitting}
                     onClick={handleSubmitAnswer}
                   >
                     Submit Answer
@@ -329,7 +631,7 @@ export default function PracticePage() {
               <Button
                 variant="outline"
                 icon={ChevronLeft}
-                disabled={currentIndex === 0}
+                disabled={currentIndex <= 0}
                 onClick={() => navigateToQuestion("prev")}
               >
                 Previous
@@ -338,7 +640,7 @@ export default function PracticePage() {
                 variant={answerState !== "unanswered" ? "primary" : "outline"}
                 icon={ChevronRight}
                 iconPosition="right"
-                disabled={currentIndex === totalQuestions - 1}
+                disabled={currentIndex >= totalQuestions - 1}
                 onClick={() => navigateToQuestion("next")}
               >
                 Next Question
@@ -438,20 +740,22 @@ export default function PracticePage() {
                 </div>
               )}
 
-              {/* Hint Button (Before Answer) */}
-              {answerState === "unanswered" && question.hint && !tutorState.showHint && (
+              {/* Get Hint Button (Before Answer) */}
+              {answerState === "unanswered" && !tutorState.showHint && (
                 <Button
                   variant="outline"
                   fullWidth
                   icon={Lightbulb}
-                  onClick={handleShowHint}
+                  onClick={handleGetHint}
+                  disabled={tutorState.isTyping}
+                  isLoading={tutorState.isTyping}
                 >
                   Need a Hint?
                 </Button>
               )}
 
               {/* Hint Display */}
-              {tutorState.showHint && (
+              {tutorState.showHint && tutorState.hintText && (
                 <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
                   <div className="flex items-center gap-2 mb-2">
                     <Lightbulb
@@ -462,129 +766,139 @@ export default function PracticePage() {
                       Hint
                     </span>
                   </div>
-                  <p className="text-sm text-amber-800 dark:text-amber-200">
-                    {question.hint}
+                  <p className="text-sm text-amber-800 dark:text-amber-200 whitespace-pre-line">
+                    {tutorState.hintText}
                   </p>
+                </div>
+              )}
+
+              {/* Loading state for hint */}
+              {tutorState.showHint && !tutorState.hintText && tutorState.isTyping && (
+                <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                  <div className="flex items-center gap-2">
+                    <Loader2 size={16} className="animate-spin text-amber-600 dark:text-amber-400" />
+                    <span className="text-sm text-amber-700 dark:text-amber-300">
+                      Getting hint...
+                    </span>
+                  </div>
                 </div>
               )}
             </Card>
 
             {/* Explanation Card (After Answer) */}
-            {tutorState.showExplanation && (
-              <Card className="animate-slide-up">
+            {tutorState.showExplanation && tutorState.explanation && (
+              <Card>
                 <div className="flex items-center gap-2 mb-4">
                   <Sparkles size={18} className="text-blue-600 dark:text-blue-400" />
                   <h3 className="font-semibold text-slate-900 dark:text-white">
                     Explanation
                   </h3>
                 </div>
-                <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
-                  {question.explanation}
+                <p className="text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+                  {tutorState.explanation}
                 </p>
               </Card>
             )}
 
-            {/* Chat with AI Tutor (After Answer) */}
-            {answerState !== "unanswered" && (
-              <Card className="animate-slide-up">
-                <div className="flex items-center gap-2 mb-4">
-                  <MessageCircle
-                    size={18}
-                    className="text-blue-600 dark:text-blue-400"
-                  />
-                  <h3 className="font-semibold text-slate-900 dark:text-white">
-                    Ask AI Tutor
-                  </h3>
-                </div>
+            {/* Chat with AI Tutor */}
+            <Card>
+              <div className="flex items-center gap-2 mb-4">
+                <MessageCircle
+                  size={18}
+                  className="text-blue-600 dark:text-blue-400"
+                />
+                <h3 className="font-semibold text-slate-900 dark:text-white">
+                  Ask AI Tutor
+                </h3>
+              </div>
 
-                {/* Chat Messages */}
-                {tutorState.messages.length > 0 && (
-                  <div className="space-y-4 mb-4 max-h-64 overflow-y-auto">
-                    {tutorState.messages.map((msg) => (
+              {/* Chat Messages */}
+              {tutorState.messages.length > 0 && (
+                <div className="space-y-4 mb-4 max-h-64 overflow-y-auto">
+                  {tutorState.messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex ${
+                        msg.role === "user" ? "justify-end" : "justify-start"
+                      }`}
+                    >
                       <div
-                        key={msg.id}
-                        className={`flex ${
-                          msg.role === "user" ? "justify-end" : "justify-start"
+                        className={`max-w-[85%] p-3 rounded-xl text-sm whitespace-pre-line ${
+                          msg.role === "user"
+                            ? "bg-blue-600 text-white rounded-br-none"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-bl-none"
                         }`}
                       >
-                        <div
-                          className={`max-w-[85%] p-3 rounded-xl text-sm ${
-                            msg.role === "user"
-                              ? "bg-blue-600 text-white rounded-br-none"
-                              : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-bl-none"
-                          }`}
-                        >
-                          {msg.content}
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))}
+                  {tutorState.isTyping && (
+                    <div className="flex justify-start">
+                      <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl rounded-bl-none">
+                        <div className="flex gap-1">
+                          <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
+                          <span
+                            className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                            style={{ animationDelay: "0.1s" }}
+                          />
+                          <span
+                            className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                            style={{ animationDelay: "0.2s" }}
+                          />
                         </div>
                       </div>
-                    ))}
-                    {tutorState.isTyping && (
-                      <div className="flex justify-start">
-                        <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl rounded-bl-none">
-                          <div className="flex gap-1">
-                            <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
-                            <span
-                              className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
-                              style={{ animationDelay: "0.1s" }}
-                            />
-                            <span
-                              className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
-                              style={{ animationDelay: "0.2s" }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Chat Input */}
-                <div className="flex gap-2">
-                  <Textarea
-                    placeholder="Ask a follow-up question..."
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSendMessage();
-                      }
-                    }}
-                    className="min-h-[44px] max-h-[120px]"
-                    rows={1}
-                  />
-                  <Button
-                    icon={Send}
-                    onClick={handleSendMessage}
-                    disabled={!chatInput.trim() || tutorState.isTyping}
-                  />
+                    </div>
+                  )}
                 </div>
+              )}
 
-                {/* Suggested Questions */}
-                <div className="mt-4">
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                    Suggested questions:
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      "Can you explain this differently?",
-                      "Show me a similar problem",
-                      "What's the key concept here?",
-                    ].map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        className="text-xs px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                        onClick={() => {
-                          setChatInput(suggestion);
-                        }}
-                      >
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
+              {/* Chat Input */}
+              <div className="flex gap-2">
+                <Textarea
+                  placeholder="Ask a follow-up question..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  className="min-h-[44px] max-h-[120px]"
+                  rows={1}
+                />
+                <Button
+                  icon={Send}
+                  onClick={handleSendMessage}
+                  disabled={!chatInput.trim() || tutorState.isTyping}
+                />
+              </div>
+
+              {/* Suggested Questions */}
+              <div className="mt-4">
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                  Suggested questions:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    "Can you explain this differently?",
+                    "What's the key concept here?",
+                    "Give me a tip for similar questions",
+                  ].map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      className="text-xs px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                      onClick={() => {
+                        setChatInput(suggestion);
+                      }}
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
                 </div>
-              </Card>
-            )}
+              </div>
+            </Card>
           </div>
         </div>
       </div>

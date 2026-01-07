@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   User,
   Bell,
@@ -19,22 +19,280 @@ import {
   Volume2,
   Eye,
   Smartphone,
+  Loader2,
+  Camera,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge, Input } from "@/components/ui";
 import { useTheme } from "@/contexts/ThemeContext";
-import { mockUser } from "@/lib/mock-data";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  profileApi,
+  settingsApi,
+  securityApi,
+  subscriptionApi,
+  UserProfile,
+  UserSettings,
+  Subscription,
+  ThemePreference,
+  API_BASE_URL,
+} from "@/lib/api";
 
 type SettingsTab = "profile" | "preferences" | "notifications" | "subscription" | "security";
 
+// Helper to get full image URL
+const getImageUrl = (url: string | undefined): string | undefined => {
+  if (!url) return undefined;
+  // If it's already a full URL, return as is
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  // Get base URL without /api suffix for static files
+  const baseUrl = API_BASE_URL.replace(/\/api$/, "");
+  return `${baseUrl}${url}`;
+};
+
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const { logout } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+
+  // Loading states
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Profile state
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [examDate, setExamDate] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Settings state
+  const [settings, setSettings] = useState<UserSettings | null>(null);
   const [dailyGoal, setDailyGoal] = useState(25);
-  const [studyReminder, setStudyReminder] = useState(true);
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [soundEffects, setSoundEffects] = useState(true);
   const [showExplanations, setShowExplanations] = useState(true);
+  const [soundEffects, setSoundEffects] = useState(true);
+
+  // Notification state
+  const [weeklyProgressReport, setWeeklyProgressReport] = useState(true);
+  const [examReminders, setExamReminders] = useState(true);
+  const [dailyStudyReminder, setDailyStudyReminder] = useState(true);
+  const [reminderTime, setReminderTime] = useState("09:00");
+  const [pushNotifications, setPushNotifications] = useState(true);
+
+  // Security state
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSuccess, setPasswordSuccess] = useState("");
+
+  // Subscription state
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
+
+  // Track if data has been fetched
+  const hasFetched = useRef(false);
+
+  // Fetch initial data
+  useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+
+    async function fetchData() {
+      setIsLoading(true);
+      try {
+        const [profileRes, settingsRes, subscriptionRes] = await Promise.all([
+          profileApi.getProfile().catch(() => null),
+          settingsApi.getSettings().catch(() => null),
+          subscriptionApi.getSubscription().catch(() => null),
+        ]);
+
+        if (profileRes?.data) {
+          setProfile(profileRes.data);
+          setFirstName(profileRes.data.firstName);
+          setLastName(profileRes.data.lastName);
+          setExamDate(profileRes.data.examDate?.split("T")[0] || "");
+        }
+
+        if (settingsRes?.data) {
+          setSettings(settingsRes.data);
+          // Safely access nested properties with defaults
+          const studyPrefs = settingsRes.data.studyPreferences || {};
+          const notifs = settingsRes.data.notifications || {};
+
+          setDailyGoal(studyPrefs.dailyGoal ?? 25);
+          setShowExplanations(studyPrefs.showExplanations ?? true);
+          setSoundEffects(studyPrefs.soundEffects ?? true);
+          setWeeklyProgressReport(notifs.weeklyProgressReport ?? true);
+          setExamReminders(notifs.examReminders ?? true);
+          setDailyStudyReminder(notifs.dailyStudyReminder ?? true);
+          setReminderTime(notifs.reminderTime || "09:00");
+          setPushNotifications(notifs.pushNotifications ?? true);
+        }
+
+        if (subscriptionRes?.data) {
+          setSubscription(subscriptionRes.data);
+        }
+      } catch (error) {
+        console.error("Error fetching settings:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    fetchData();
+  }, []);
+
+  // Save profile
+  const handleSaveProfile = async () => {
+    setIsSaving(true);
+    try {
+      const response = await profileApi.updateProfile({
+        firstName,
+        lastName,
+        examDate: examDate || undefined,
+      });
+      if (response.data) {
+        setProfile(response.data);
+      }
+    } catch (error) {
+      console.error("Error saving profile:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Upload photo
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const response = await profileApi.uploadPhoto(file);
+      if (response.data?.photoUrl && profile) {
+        setProfile({ ...profile, photoUrl: response.data.photoUrl });
+      }
+    } catch (error) {
+      console.error("Error uploading photo:", error);
+    }
+  };
+
+  // Update theme
+  const handleThemeChange = async (newTheme: ThemePreference) => {
+    setTheme(newTheme);
+    try {
+      await settingsApi.updateAppearance({ theme: newTheme });
+    } catch (error) {
+      console.error("Error updating theme:", error);
+    }
+  };
+
+  // Update daily goal
+  const handleDailyGoalChange = async (value: number) => {
+    setDailyGoal(value);
+  };
+
+  const handleDailyGoalSave = async () => {
+    try {
+      await settingsApi.updateDailyGoal(dailyGoal);
+    } catch (error) {
+      console.error("Error updating daily goal:", error);
+    }
+  };
+
+  // Update study preferences
+  const handleStudyPreferenceChange = async (key: "showExplanations" | "soundEffects", value: boolean) => {
+    if (key === "showExplanations") setShowExplanations(value);
+    if (key === "soundEffects") setSoundEffects(value);
+
+    try {
+      await settingsApi.updateStudyPreferences({ [key]: value });
+    } catch (error) {
+      console.error("Error updating study preferences:", error);
+    }
+  };
+
+  // Update notifications
+  const handleNotificationChange = async (
+    key: keyof typeof notificationState,
+    value: boolean | string
+  ) => {
+    const notificationState = {
+      weeklyProgressReport,
+      examReminders,
+      dailyStudyReminder,
+      reminderTime,
+      pushNotifications,
+    };
+
+    // Update local state
+    switch (key) {
+      case "weeklyProgressReport":
+        setWeeklyProgressReport(value as boolean);
+        break;
+      case "examReminders":
+        setExamReminders(value as boolean);
+        break;
+      case "dailyStudyReminder":
+        setDailyStudyReminder(value as boolean);
+        break;
+      case "reminderTime":
+        setReminderTime(value as string);
+        break;
+      case "pushNotifications":
+        setPushNotifications(value as boolean);
+        break;
+    }
+
+    try {
+      await settingsApi.updateNotifications({ [key]: value });
+    } catch (error) {
+      console.error("Error updating notifications:", error);
+    }
+  };
+
+  // Change password
+  const handleChangePassword = async () => {
+    setPasswordError("");
+    setPasswordSuccess("");
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      setPasswordError("Password must be at least 8 characters");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await securityApi.changePassword({
+        currentPassword,
+        newPassword,
+        confirmPassword,
+      });
+      setPasswordSuccess("Password updated successfully");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      setPasswordError("Failed to update password. Please check your current password.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Sign out
+  const handleSignOut = async () => {
+    try {
+      await securityApi.signOut();
+      logout();
+    } catch (error) {
+      console.error("Error signing out:", error);
+      logout();
+    }
+  };
 
   const tabs = [
     { id: "profile" as const, label: "Profile", icon: User },
@@ -45,20 +303,54 @@ export default function SettingsPage() {
   ];
 
   const renderTabContent = () => {
+    if (isLoading) {
+      return (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case "profile":
         return (
           <div className="space-y-6">
             {/* Profile Picture */}
             <div className="flex items-center gap-6">
-              <div className="w-20 h-20 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
-                <User size={32} className="text-blue-600 dark:text-blue-400" />
+              <div className="relative">
+                <div className="w-20 h-20 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center overflow-hidden">
+                  {profile?.photoUrl ? (
+                    <img
+                      src={getImageUrl(profile.photoUrl)}
+                      alt="Profile"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <User size={32} className="text-blue-600 dark:text-blue-400" />
+                  )}
+                </div>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors"
+                >
+                  <Camera size={14} />
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  className="hidden"
+                />
               </div>
               <div>
-                <Button variant="outline" size="sm">
-                  Change Photo
-                </Button>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                <p className="font-medium text-slate-900 dark:text-white">
+                  {profile?.firstName} {profile?.lastName}
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {profile?.email}
+                </p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   JPG, PNG or GIF. Max 2MB.
                 </p>
               </div>
@@ -68,31 +360,36 @@ export default function SettingsPage() {
             <div className="grid md:grid-cols-2 gap-4">
               <Input
                 label="First Name"
-                defaultValue={mockUser.firstName}
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
                 placeholder="Enter first name"
               />
               <Input
                 label="Last Name"
-                defaultValue={mockUser.lastName}
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
                 placeholder="Enter last name"
               />
               <Input
                 label="Email Address"
                 type="email"
-                defaultValue={mockUser.email}
-                placeholder="Enter email"
+                value={profile?.email || ""}
+                disabled
                 icon={Mail}
               />
               <Input
                 label="Exam Date"
                 type="date"
-                defaultValue={mockUser.examDate.split("T")[0]}
+                value={examDate}
+                onChange={(e) => setExamDate(e.target.value)}
                 icon={Calendar}
               />
             </div>
 
             <div className="pt-4 border-t border-slate-200 dark:border-slate-800">
-              <Button>Save Changes</Button>
+              <Button onClick={handleSaveProfile} isLoading={isSaving}>
+                Save Changes
+              </Button>
             </div>
           </div>
         );
@@ -107,7 +404,7 @@ export default function SettingsPage() {
               </h3>
               <div className="grid grid-cols-2 gap-4">
                 <button
-                  onClick={() => setTheme("light")}
+                  onClick={() => handleThemeChange("light")}
                   className={`p-4 rounded-xl border-2 transition-all ${
                     theme === "light"
                       ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
@@ -133,7 +430,7 @@ export default function SettingsPage() {
                 </button>
 
                 <button
-                  onClick={() => setTheme("dark")}
+                  onClick={() => handleThemeChange("dark")}
                   className={`p-4 rounded-xl border-2 transition-all ${
                     theme === "dark"
                       ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
@@ -172,7 +469,9 @@ export default function SettingsPage() {
                   max="100"
                   step="5"
                   value={dailyGoal}
-                  onChange={(e) => setDailyGoal(Number(e.target.value))}
+                  onChange={(e) => handleDailyGoalChange(Number(e.target.value))}
+                  onMouseUp={handleDailyGoalSave}
+                  onTouchEnd={handleDailyGoalSave}
                   className="flex-1 h-2 bg-slate-200 dark:bg-slate-700 rounded-full appearance-none cursor-pointer accent-blue-600"
                 />
                 <span className="w-20 text-center font-semibold text-slate-900 dark:text-white">
@@ -195,14 +494,14 @@ export default function SettingsPage() {
                   label="Show explanations after each question"
                   description="Automatically display explanations after answering"
                   checked={showExplanations}
-                  onChange={setShowExplanations}
+                  onChange={(value) => handleStudyPreferenceChange("showExplanations", value)}
                 />
                 <ToggleOption
                   icon={Volume2}
                   label="Sound effects"
                   description="Play sounds for correct/incorrect answers"
                   checked={soundEffects}
-                  onChange={setSoundEffects}
+                  onChange={(value) => handleStudyPreferenceChange("soundEffects", value)}
                 />
               </div>
             </div>
@@ -222,15 +521,15 @@ export default function SettingsPage() {
                   icon={Mail}
                   label="Weekly progress report"
                   description="Receive a summary of your weekly progress"
-                  checked={emailNotifications}
-                  onChange={setEmailNotifications}
+                  checked={weeklyProgressReport}
+                  onChange={(value) => handleNotificationChange("weeklyProgressReport", value)}
                 />
                 <ToggleOption
                   icon={Calendar}
                   label="Exam reminders"
                   description="Get reminded as your exam date approaches"
-                  checked={true}
-                  onChange={() => {}}
+                  checked={examReminders}
+                  onChange={(value) => handleNotificationChange("examReminders", value)}
                 />
               </div>
             </div>
@@ -245,15 +544,16 @@ export default function SettingsPage() {
                   icon={Clock}
                   label="Daily study reminder"
                   description="Get reminded to study at your preferred time"
-                  checked={studyReminder}
-                  onChange={setStudyReminder}
+                  checked={dailyStudyReminder}
+                  onChange={(value) => handleNotificationChange("dailyStudyReminder", value)}
                 />
-                {studyReminder && (
+                {dailyStudyReminder && (
                   <div className="ml-12">
                     <Input
                       label="Reminder Time"
                       type="time"
-                      defaultValue="09:00"
+                      value={reminderTime}
+                      onChange={(e) => handleNotificationChange("reminderTime", e.target.value)}
                       className="max-w-xs"
                     />
                   </div>
@@ -262,8 +562,8 @@ export default function SettingsPage() {
                   icon={Smartphone}
                   label="Push notifications"
                   description="Receive notifications on your device"
-                  checked={true}
-                  onChange={() => {}}
+                  checked={pushNotifications}
+                  onChange={(value) => handleNotificationChange("pushNotifications", value)}
                 />
               </div>
             </div>
@@ -277,23 +577,40 @@ export default function SettingsPage() {
             <div className="p-6 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 text-white">
               <div className="flex items-center justify-between mb-4">
                 <Badge className="bg-white/20 text-white">Current Plan</Badge>
-                <Badge className="bg-emerald-500 text-white">Active</Badge>
+                <Badge
+                  className={
+                    subscription?.status === "PREMIUM"
+                      ? "bg-emerald-500 text-white"
+                      : subscription?.status === "EXPIRED"
+                        ? "bg-rose-500 text-white"
+                        : "bg-slate-500 text-white"
+                  }
+                >
+                  {subscription?.status || "FREE"}
+                </Badge>
               </div>
-              <h3 className="text-2xl font-bold mb-1">Season Pass</h3>
+              <h3 className="text-2xl font-bold mb-1">
+                {subscription?.plan || "Free Plan"}
+              </h3>
               <p className="text-blue-100 mb-4">
-                Full access to all features until you pass
+                {subscription?.status === "PREMIUM"
+                  ? "Full access to all features"
+                  : "Upgrade to unlock all features"}
               </p>
-              <div className="flex items-center gap-2">
-                <span className="text-3xl font-bold">₱399</span>
-                <span className="text-blue-200">one-time payment</span>
-              </div>
+              {subscription?.status === "PREMIUM" && subscription?.expiresAt && (
+                <p className="text-sm text-blue-200">
+                  Valid until: {new Date(subscription.expiresAt).toLocaleDateString()}
+                </p>
+              )}
             </div>
 
             {/* Plan Features */}
             <Card>
-              <CardTitle className="mb-4">Your Plan Includes</CardTitle>
+              <CardTitle className="mb-4">
+                {subscription?.status === "PREMIUM" ? "Your Plan Includes" : "Premium Features"}
+              </CardTitle>
               <div className="space-y-3">
-                {[
+                {(subscription?.features || [
                   "50,000+ practice questions",
                   "AI Tutor - unlimited questions",
                   "Detailed explanations",
@@ -301,7 +618,7 @@ export default function SettingsPage() {
                   "Timed mock exams",
                   "Mobile-friendly access",
                   "Valid until you pass",
-                ].map((feature) => (
+                ]).map((feature) => (
                   <div key={feature} className="flex items-center gap-3">
                     <div className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
                       <Check size={12} className="text-emerald-600 dark:text-emerald-400" />
@@ -312,24 +629,11 @@ export default function SettingsPage() {
               </div>
             </Card>
 
-            {/* Billing Info */}
-            <Card>
-              <CardTitle className="mb-4">Billing Information</CardTitle>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">Purchase Date</span>
-                  <span className="text-slate-900 dark:text-white">November 1, 2024</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">Payment Method</span>
-                  <span className="text-slate-900 dark:text-white">GCash</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-500 dark:text-slate-400">Amount Paid</span>
-                  <span className="text-slate-900 dark:text-white">₱399.00</span>
-                </div>
-              </div>
-            </Card>
+            {subscription?.status !== "PREMIUM" && (
+              <Button fullWidth size="lg">
+                Upgrade to Premium - P399
+              </Button>
+            )}
           </div>
         );
 
@@ -345,19 +649,33 @@ export default function SettingsPage() {
                 <Input
                   label="Current Password"
                   type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
                   placeholder="Enter current password"
                 />
                 <Input
                   label="New Password"
                   type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
                   placeholder="Enter new password"
                 />
                 <Input
                   label="Confirm New Password"
                   type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm new password"
                 />
-                <Button>Update Password</Button>
+                {passwordError && (
+                  <p className="text-sm text-rose-600 dark:text-rose-400">{passwordError}</p>
+                )}
+                {passwordSuccess && (
+                  <p className="text-sm text-emerald-600 dark:text-emerald-400">{passwordSuccess}</p>
+                )}
+                <Button onClick={handleChangePassword} isLoading={isSaving}>
+                  Update Password
+                </Button>
               </div>
             </div>
 
@@ -377,7 +695,7 @@ export default function SettingsPage() {
                         Current Device
                       </p>
                       <p className="text-sm text-slate-500 dark:text-slate-400">
-                        Chrome on macOS • Active now
+                        Active now
                       </p>
                     </div>
                   </div>
@@ -453,7 +771,10 @@ export default function SettingsPage() {
               </nav>
 
               <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
-                <button className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">
+                <button
+                  onClick={handleSignOut}
+                  className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                >
                   <LogOut size={20} />
                   <span className="font-medium">Sign Out</span>
                 </button>

@@ -1,39 +1,139 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   BookOpen,
   Target,
   TrendingUp,
-  Clock,
   Calendar,
   ArrowRight,
   Flame,
   AlertCircle,
   CheckCircle2,
   BarChart3,
+  Loader2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
-import { Button, Card, CardTitle, Badge } from "@/components/ui";
-import {
-  mockUser,
-  mockCategoryPerformance,
-  mockDailyProgress,
-  getDaysUntilExam,
-  formatStudyTime,
-} from "@/lib/mock-data";
-import { getCategoryDisplayName } from "@/lib/types";
+import { Button, Card, CardTitle } from "@/components/ui";
+import { useAuth } from "@/contexts/AuthContext";
+import { practiceApi, questionsApi, profileApi, UserStats, CategoryProgress, categoryDisplayNames, Question } from "@/lib/api";
+
+type ApiCategory = Question["category"];
+
+const categories: ApiCategory[] = [
+  "NUMERICAL_ABILITY",
+  "VERBAL_ABILITY",
+  "ANALYTICAL_ABILITY",
+  "GENERAL_INFORMATION",
+  "CLERICAL_ABILITY",
+];
 
 export default function DashboardPage() {
-  const daysUntilExam = getDaysUntilExam(mockUser.examDate);
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const [stats, setStats] = useState<UserStats | null>(null);
+  const [categoryProgress, setCategoryProgress] = useState<CategoryProgress[]>([]);
+  const [categoryQuestions, setCategoryQuestions] = useState<Record<ApiCategory, string | null>>({
+    NUMERICAL_ABILITY: null,
+    VERBAL_ABILITY: null,
+    ANALYTICAL_ABILITY: null,
+    GENERAL_INFORMATION: null,
+    CLERICAL_ABILITY: null,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [examDate, setExamDate] = useState<Date | null>(null);
+
+  // Calculate days until exam from user's profile exam date
+  const daysUntilExam = examDate
+    ? Math.ceil((examDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+
   const greeting = getGreeting();
-  const todayProgress = mockDailyProgress[mockDailyProgress.length - 1];
 
   function getGreeting() {
     const hour = new Date().getHours();
     if (hour < 12) return "Good morning";
     if (hour < 18) return "Good afternoon";
     return "Good evening";
+  }
+
+  useEffect(() => {
+    async function fetchStats() {
+      if (!isAuthenticated) return;
+
+      try {
+        // Fetch stats, progress, profile, and first question for each category in parallel
+        const [statsResponse, progressResponse, profileResponse, ...questionResponses] = await Promise.all([
+          practiceApi.getStats().catch(() => null),
+          practiceApi.getProgressByCategories().catch(() => null),
+          profileApi.getProfile().catch(() => null),
+          ...categories.map((category) =>
+            questionsApi.getQuestions({ category, limit: 1 }).catch(() => ({ data: [] }))
+          ),
+        ]);
+
+        // Set exam date from profile
+        if (profileResponse?.data?.examDate) {
+          setExamDate(new Date(profileResponse.data.examDate));
+        }
+
+        if (statsResponse?.data) {
+          setStats(statsResponse.data);
+        }
+
+        if (progressResponse?.data?.categories) {
+          setCategoryProgress(progressResponse.data.categories);
+        }
+
+        // If we have overall stats from progress response, use those
+        if (progressResponse?.data?.overallStats) {
+          setStats(prev => prev || {
+            totalAttempts: progressResponse.data.overallStats.totalAttempts,
+            correctAnswers: progressResponse.data.overallStats.correctAnswers,
+            accuracy: progressResponse.data.overallStats.accuracy,
+          });
+        }
+
+        // Build category questions map
+        const questionsMap: Record<ApiCategory, string | null> = {
+          NUMERICAL_ABILITY: null,
+          VERBAL_ABILITY: null,
+          ANALYTICAL_ABILITY: null,
+          GENERAL_INFORMATION: null,
+          CLERICAL_ABILITY: null,
+        };
+
+        categories.forEach((category, index) => {
+          const questions = questionResponses[index]?.data;
+          if (questions && questions.length > 0) {
+            questionsMap[category] = questions[0].id;
+          }
+        });
+
+        setCategoryQuestions(questionsMap);
+      } catch (error) {
+        console.error("Error fetching stats:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    if (!authLoading) {
+      fetchStats();
+    }
+  }, [isAuthenticated, authLoading]);
+
+  // Get user display name from email
+  const displayName = user?.email?.split("@")[0] || "Student";
+
+  if (authLoading || isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      </DashboardLayout>
+    );
   }
 
   return (
@@ -47,23 +147,29 @@ export default function DashboardPage() {
 
           <div className="relative">
             <h1 className="text-2xl lg:text-3xl font-bold mb-2">
-              {greeting}, {mockUser.firstName}!
+              {greeting}, {displayName}!
             </h1>
             <p className="text-blue-100 mb-6">
-              {daysUntilExam > 0 ? (
-                <>
-                  <span className="font-semibold text-white">
-                    {daysUntilExam} days
-                  </span>{" "}
-                  until your Civil Service Exam. Keep up the momentum!
-                </>
+              {daysUntilExam !== null ? (
+                daysUntilExam > 0 ? (
+                  <>
+                    <span className="font-semibold text-white">
+                      {daysUntilExam} days
+                    </span>{" "}
+                    until your Civil Service Exam. Keep up the momentum!
+                  </>
+                ) : daysUntilExam === 0 ? (
+                  "Your exam is today! You've got this!"
+                ) : (
+                  "Your exam date has passed. Set a new target in Settings."
+                )
               ) : (
-                "Your exam is today! You've got this!"
+                <>Set your exam date in <Link href="/settings" className="underline font-semibold text-white">Settings</Link> to track your countdown.</>
               )}
             </p>
 
             <div className="flex flex-wrap gap-4">
-              <Link href="/practice/q1">
+              <Link href="/practice">
                 <Button variant="secondary" icon={ArrowRight} iconPosition="right">
                   Continue Reviewing
                 </Button>
@@ -88,7 +194,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {mockUser.stats.questionsAnswered}
+                {stats?.totalAttempts || 0}
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Questions Answered
@@ -102,7 +208,7 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {mockUser.stats.accuracy.toFixed(1)}%
+                {stats?.accuracy?.toFixed(1) || 0}%
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Current Accuracy
@@ -116,24 +222,24 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {mockUser.stats.streakDays}
+                {stats?.correctAnswers || 0}
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Day Streak
+                Correct Answers
               </p>
             </div>
           </Card>
 
           <Card className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-xl bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center shrink-0">
-              <Clock size={24} className="text-purple-600 dark:text-purple-400" />
+              <TrendingUp size={24} className="text-purple-600 dark:text-purple-400" />
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900 dark:text-white">
-                {formatStudyTime(mockUser.stats.totalStudyTimeMinutes)}
+                {user?.isPremium ? "Premium" : "Free"}
               </p>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Total Study Time
+                Account Status
               </p>
             </div>
           </Card>
@@ -143,24 +249,27 @@ export default function DashboardPage() {
         <div className="grid lg:grid-cols-3 gap-6">
           {/* Left Column - Performance */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Weak Areas Alert */}
-            <Card className="border-l-4 border-l-amber-500">
+            {/* Getting Started / Weak Areas Alert */}
+            <Card className="border-l-4 border-l-blue-500">
               <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
                   <AlertCircle
                     size={20}
-                    className="text-amber-600 dark:text-amber-400"
+                    className="text-blue-600 dark:text-blue-400"
                   />
                 </div>
                 <div className="flex-1">
                   <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
-                    Focus Area: {getCategoryDisplayName(mockUser.stats.weakestCategory)}
+                    {stats && stats.totalAttempts > 0
+                      ? "Keep Up the Great Work!"
+                      : "Ready to Start Learning?"}
                   </h3>
                   <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-                    Based on your recent performance, we recommend spending more time
-                    on this subject to improve your overall score.
+                    {stats && stats.totalAttempts > 0
+                      ? `You've answered ${stats.totalAttempts} questions with ${stats.accuracy.toFixed(1)}% accuracy. Keep practicing to improve your score!`
+                      : "Start practicing to track your progress and prepare for the Civil Service Exam."}
                   </p>
-                  <Link href="/practice?category=numerical-reasoning">
+                  <Link href="/practice">
                     <Button size="sm" variant="outline">
                       Practice Now
                     </Button>
@@ -180,92 +289,86 @@ export default function DashboardPage() {
                 </Link>
               </div>
 
-              <div className="space-y-4">
-                {mockCategoryPerformance.map((cat) => (
-                  <div key={cat.category}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                        {getCategoryDisplayName(cat.category)}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-slate-500 dark:text-slate-400">
-                          {cat.correctAnswers}/{cat.totalQuestions}
-                        </span>
-                        <Badge
-                          variant={
-                            cat.accuracy >= 80
-                              ? "success"
-                              : cat.accuracy >= 60
-                                ? "warning"
-                                : "danger"
-                          }
-                          size="sm"
-                        >
-                          {cat.accuracy.toFixed(0)}%
-                        </Badge>
-                      </div>
-                    </div>
-                    <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          cat.accuracy >= 80
-                            ? "bg-emerald-500"
-                            : cat.accuracy >= 60
-                              ? "bg-amber-500"
-                              : "bg-rose-500"
-                        }`}
-                        style={{ width: `${cat.accuracy}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </Card>
+              <div className="space-y-5">
+                {Object.entries(categoryDisplayNames).map(([key, name]) => {
+                  const progress = categoryProgress.find(p => p.category === key);
+                  const accuracy = progress?.accuracy ?? 0;
+                  const correctAnswers = progress?.correctAnswers ?? 0;
+                  const totalAttempts = progress?.attemptedQuestions ?? 0;
+                  const hasAttempts = totalAttempts > 0;
 
-            {/* Weekly Progress */}
-            <Card>
-              <CardTitle className="mb-6">This Week&apos;s Progress</CardTitle>
-              <div className="grid grid-cols-7 gap-2">
-                {mockDailyProgress.map((day, index) => {
-                  const date = new Date(day.date);
-                  const dayName = date.toLocaleDateString("en-US", {
-                    weekday: "short",
-                  });
-                  const isToday = index === mockDailyProgress.length - 1;
+                  // Progress bar color based on accuracy
+                  const getProgressColor = (acc: number) => {
+                    if (acc >= 80) return "bg-emerald-500";
+                    if (acc >= 60) return "bg-amber-500";
+                    return "bg-amber-500";
+                  };
 
                   return (
-                    <div
-                      key={day.date}
-                      className={`text-center p-3 rounded-lg ${
-                        isToday
-                          ? "bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800"
-                          : "bg-slate-50 dark:bg-slate-800"
-                      }`}
-                    >
-                      <p
-                        className={`text-xs font-medium mb-1 ${
-                          isToday
-                            ? "text-blue-600 dark:text-blue-400"
-                            : "text-slate-500 dark:text-slate-400"
-                        }`}
-                      >
-                        {dayName}
-                      </p>
-                      <p
-                        className={`text-lg font-bold ${
-                          isToday
-                            ? "text-blue-700 dark:text-blue-300"
-                            : "text-slate-700 dark:text-slate-300"
-                        }`}
-                      >
-                        {day.questionsAnswered}
-                      </p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500">
-                        questions
-                      </p>
+                    <div key={key} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          {name}
+                        </span>
+                        <div className="flex items-center gap-3">
+                          {hasAttempts && (
+                            <>
+                              <span className="text-sm text-slate-500 dark:text-slate-400">
+                                {correctAnswers}/{totalAttempts}
+                              </span>
+                              <span className={`text-sm font-semibold ${
+                                accuracy >= 80 ? "text-emerald-600 dark:text-emerald-400" :
+                                accuracy >= 60 ? "text-amber-600 dark:text-amber-400" :
+                                "text-amber-600 dark:text-amber-400"
+                              }`}>
+                                {Math.round(accuracy)}%
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        {hasAttempts ? (
+                          <div
+                            className={`h-full ${getProgressColor(accuracy)} rounded-full transition-all duration-300`}
+                            style={{ width: `${Math.min(accuracy, 100)}%` }}
+                          />
+                        ) : null}
+                      </div>
                     </div>
                   );
                 })}
+              </div>
+            </Card>
+
+            {/* Progress Summary */}
+            <Card>
+              <CardTitle className="mb-6">Your Progress</CardTitle>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="text-center p-4 rounded-lg bg-slate-50 dark:bg-slate-800">
+                  <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">
+                    {stats?.totalAttempts || 0}
+                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Total Questions
+                  </p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-slate-50 dark:bg-slate-800">
+                  <p className="text-3xl font-bold text-emerald-600 dark:text-emerald-400">
+                    {stats?.correctAnswers || 0}
+                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Correct
+                  </p>
+                </div>
+                <div className="text-center p-4 rounded-lg bg-slate-50 dark:bg-slate-800">
+                  <p className="text-3xl font-bold text-rose-600 dark:text-rose-400">
+                    {(stats?.totalAttempts || 0) - (stats?.correctAnswers || 0)}
+                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    Incorrect
+                  </p>
+                </div>
               </div>
             </Card>
           </div>
@@ -280,65 +383,63 @@ export default function DashboardPage() {
                   Exam Countdown
                 </span>
               </div>
-              <div className="text-center py-4">
-                <p className="text-5xl font-bold mb-2">{daysUntilExam}</p>
-                <p className="text-slate-400">days remaining</p>
-              </div>
-              <div className="text-center text-sm text-slate-400">
-                {new Date(mockUser.examDate).toLocaleDateString("en-US", {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </div>
+              {examDate && daysUntilExam !== null ? (
+                <>
+                  <div className="text-center py-4">
+                    <p className="text-5xl font-bold mb-2">{Math.max(0, daysUntilExam)}</p>
+                    <p className="text-slate-400">
+                      {daysUntilExam > 0 ? "days remaining" : daysUntilExam === 0 ? "Exam day!" : "days ago"}
+                    </p>
+                  </div>
+                  <div className="text-center text-sm text-slate-400">
+                    {examDate.toLocaleDateString("en-US", {
+                      weekday: "long",
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-slate-400 mb-4">No exam date set</p>
+                  <Link href="/settings">
+                    <Button variant="secondary" size="sm">
+                      Set Exam Date
+                    </Button>
+                  </Link>
+                </div>
+              )}
             </Card>
 
             {/* Quick Practice */}
             <Card>
               <CardTitle className="mb-4">Quick Practice</CardTitle>
               <div className="space-y-2">
-                {[
-                  {
-                    category: "numerical-reasoning",
-                    name: "Numerical Reasoning",
-                    questions: 120,
-                  },
-                  {
-                    category: "verbal-reasoning",
-                    name: "Verbal Reasoning",
-                    questions: 95,
-                  },
-                  {
-                    category: "analytical-ability",
-                    name: "Analytical Ability",
-                    questions: 67,
-                  },
-                  {
-                    category: "general-information",
-                    name: "General Information",
-                    questions: 45,
-                  },
-                ].map((item) => (
-                  <Link
-                    key={item.category}
-                    href={`/practice?category=${item.category}`}
-                    className="flex items-center justify-between p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group"
-                  >
-                    <div>
-                      <p className="font-medium text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
-                        {item.name}
-                      </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {item.questions} questions
-                      </p>
-                    </div>
-                    <ArrowRight
-                      size={16}
-                      className="text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 group-hover:translate-x-1 transition-all"
-                    />
-                  </Link>
-                ))}
+                {categories.map((category) => {
+                  const questionId = categoryQuestions[category];
+                  const href = questionId
+                    ? `/practice/${questionId}?category=${category}`
+                    : `/practice?category=${category}`;
+
+                  return (
+                    <Link
+                      key={category}
+                      href={href}
+                      className="flex items-center justify-between p-3 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors group"
+                    >
+                      <div>
+                        <p className="font-medium text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                          {categoryDisplayNames[category]}
+                        </p>
+                      </div>
+                      <ArrowRight
+                        size={16}
+                        className="text-slate-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 group-hover:translate-x-1 transition-all"
+                      />
+                    </Link>
+                  );
+                })}
               </div>
             </Card>
 
@@ -350,17 +451,17 @@ export default function DashboardPage() {
                   <CheckCircle2
                     size={20}
                     className={`${
-                      todayProgress.questionsAnswered >= 25
+                      (stats?.totalAttempts || 0) >= 10
                         ? "text-emerald-500"
                         : "text-slate-300 dark:text-slate-600"
                     }`}
                   />
                   <div className="flex-1">
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Answer 25 questions
+                      Answer 10 questions
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {todayProgress.questionsAnswered}/25 completed
+                      {Math.min(stats?.totalAttempts || 0, 10)}/10 completed
                     </p>
                   </div>
                 </div>
@@ -368,17 +469,17 @@ export default function DashboardPage() {
                   <CheckCircle2
                     size={20}
                     className={`${
-                      todayProgress.studyTimeMinutes >= 30
+                      (stats?.accuracy || 0) >= 70
                         ? "text-emerald-500"
                         : "text-slate-300 dark:text-slate-600"
                     }`}
                   />
                   <div className="flex-1">
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Study for 30 minutes
+                      Achieve 70% accuracy
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {todayProgress.studyTimeMinutes}/30 minutes
+                      Currently at {stats?.accuracy?.toFixed(0) || 0}%
                     </p>
                   </div>
                 </div>
@@ -386,43 +487,37 @@ export default function DashboardPage() {
                   <CheckCircle2
                     size={20}
                     className={`${
-                      (todayProgress.correctAnswers / todayProgress.questionsAnswered) *
-                        100 >=
-                      80
+                      (stats?.correctAnswers || 0) >= 5
                         ? "text-emerald-500"
                         : "text-slate-300 dark:text-slate-600"
                     }`}
                   />
                   <div className="flex-1">
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Maintain 80% accuracy
+                      Get 5 correct answers
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Currently at{" "}
-                      {(
-                        (todayProgress.correctAnswers /
-                          todayProgress.questionsAnswered) *
-                        100
-                      ).toFixed(0)}
-                      %
+                      {Math.min(stats?.correctAnswers || 0, 5)}/5 correct
                     </p>
                   </div>
                 </div>
               </div>
             </Card>
 
-            {/* Streak Motivation */}
-            <Card className="bg-linear-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border-amber-200 dark:border-amber-800">
+            {/* Account Status */}
+            <Card className="bg-linear-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-blue-200 dark:border-blue-800">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
-                  <Flame size={24} className="text-amber-600" />
+                <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center">
+                  <TrendingUp size={24} className="text-blue-600" />
                 </div>
                 <div>
-                  <p className="font-semibold text-amber-900 dark:text-amber-100">
-                    {mockUser.stats.streakDays} Day Streak!
+                  <p className="font-semibold text-blue-900 dark:text-blue-100">
+                    {user?.isPremium ? "Premium Member" : "Free Account"}
                   </p>
-                  <p className="text-sm text-amber-700 dark:text-amber-300">
-                    Keep it going to unlock rewards
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    {user?.isPremium
+                      ? "Full access to all features"
+                      : "Upgrade for unlimited access"}
                   </p>
                 </div>
               </div>

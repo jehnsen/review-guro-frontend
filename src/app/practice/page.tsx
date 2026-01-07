@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -9,36 +10,123 @@ import {
   Globe,
   ClipboardList,
   Play,
+  Loader2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge } from "@/components/ui";
-import { mockQuestions, mockCategoryPerformance } from "@/lib/mock-data";
-import { getCategoryDisplayName, QuestionCategory } from "@/lib/types";
+import {
+  questionsApi,
+  practiceApi,
+  Question,
+  CategoryProgress,
+  ProgressResponse,
+  categoryDisplayNames,
+} from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
-const categoryIcons: Record<QuestionCategory, typeof Calculator> = {
-  "numerical-reasoning": Calculator,
-  "verbal-reasoning": FileText,
-  "analytical-ability": Brain,
-  "general-information": Globe,
-  "clerical-operations": ClipboardList,
+type ApiCategory = Question["category"];
+
+const categoryIcons: Record<ApiCategory, typeof Calculator> = {
+  NUMERICAL_ABILITY: Calculator,
+  VERBAL_ABILITY: FileText,
+  ANALYTICAL_ABILITY: Brain,
+  GENERAL_INFORMATION: Globe,
+  CLERICAL_ABILITY: ClipboardList,
 };
 
-const categoryColors: Record<QuestionCategory, string> = {
-  "numerical-reasoning": "blue",
-  "verbal-reasoning": "purple",
-  "analytical-ability": "amber",
-  "general-information": "emerald",
-  "clerical-operations": "rose",
+const categoryColors: Record<ApiCategory, string> = {
+  NUMERICAL_ABILITY: "blue",
+  VERBAL_ABILITY: "purple",
+  ANALYTICAL_ABILITY: "amber",
+  GENERAL_INFORMATION: "emerald",
+  CLERICAL_ABILITY: "rose",
 };
+
+const categories: ApiCategory[] = [
+  "NUMERICAL_ABILITY",
+  "VERBAL_ABILITY",
+  "ANALYTICAL_ABILITY",
+  "GENERAL_INFORMATION",
+  "CLERICAL_ABILITY",
+];
+
+interface CategoryData {
+  category: ApiCategory;
+  questions: Question[];
+  count: number;
+  progress?: CategoryProgress;
+}
 
 export default function PracticeLandingPage() {
-  const categories: QuestionCategory[] = [
-    "numerical-reasoning",
-    "verbal-reasoning",
-    "analytical-ability",
-    "general-information",
-    "clerical-operations",
-  ];
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const [categoryData, setCategoryData] = useState<CategoryData[]>([]);
+  const [overallStats, setOverallStats] = useState<ProgressResponse["overallStats"] | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchData() {
+      if (!isAuthenticated) return;
+
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        // Fetch progress data and questions in parallel
+        const [progressResponse, ...questionResponses] = await Promise.all([
+          practiceApi.getProgressByCategories().catch(() => null),
+          ...categories.map((category) =>
+            questionsApi.getQuestions({ category, limit: 10 }).catch(() => ({ data: [] }))
+          ),
+        ]);
+
+        // Build category data with progress
+        const results: CategoryData[] = categories.map((category, index) => {
+          const questionsData = questionResponses[index];
+          const progress = progressResponse?.data?.categories?.find(
+            (c) => c.category === category
+          );
+
+          return {
+            category,
+            questions: questionsData?.data || [],
+            count: progress?.questionsAvailable || questionsData?.data?.length || 0,
+            progress,
+          };
+        });
+
+        setCategoryData(results);
+
+        // Set overall stats from progress response
+        if (progressResponse?.data?.overallStats) {
+          setOverallStats(progressResponse.data.overallStats);
+        }
+      } catch (err) {
+        setError("Failed to load practice data. Please try again.");
+        console.error("Error fetching practice data:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    if (!authLoading) {
+      fetchData();
+    }
+  }, [isAuthenticated, authLoading]);
+
+  // Get first question from any category for quick start
+  const firstQuestion = categoryData.find((c) => c.questions.length > 0)
+    ?.questions[0];
+
+  if (authLoading || isLoading) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
@@ -49,9 +137,48 @@ export default function PracticeLandingPage() {
             Practice Mode
           </h1>
           <p className="text-slate-600 dark:text-slate-400">
-            Choose a category to start practicing or continue with mixed questions.
+            Choose a category to start practicing or continue with mixed
+            questions.
           </p>
         </div>
+
+        {error && (
+          <Card className="mb-8 border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20">
+            <p className="text-rose-600 dark:text-rose-400">{error}</p>
+          </Card>
+        )}
+
+        {/* User Stats Banner */}
+        {overallStats && overallStats.totalAttempts > 0 && (
+          <Card className="mb-8 bg-slate-50 dark:bg-slate-800/50">
+            <div className="flex flex-wrap gap-6">
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Total Attempts
+                </p>
+                <p className="text-2xl font-bold text-slate-900 dark:text-white">
+                  {overallStats.totalAttempts}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Correct Answers
+                </p>
+                <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                  {overallStats.correctAnswers}
+                </p>
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Accuracy
+                </p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                  {overallStats.accuracy.toFixed(1)}%
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Quick Start */}
         <Card className="mb-8 bg-linear-to-r from-blue-600 to-blue-700 text-white">
@@ -67,8 +194,17 @@ export default function PracticeLandingPage() {
                 </p>
               </div>
             </div>
-            <Link href="/practice/q1">
-              <Button variant="secondary" icon={ArrowRight} iconPosition="right">
+            <Link
+              href={
+                firstQuestion ? `/practice/${firstQuestion.id}` : "/practice"
+              }
+            >
+              <Button
+                variant="secondary"
+                icon={ArrowRight}
+                iconPosition="right"
+                disabled={!firstQuestion}
+              >
                 Start Practice
               </Button>
             </Link>
@@ -84,12 +220,19 @@ export default function PracticeLandingPage() {
             {categories.map((category) => {
               const Icon = categoryIcons[category];
               const color = categoryColors[category];
-              const performance = mockCategoryPerformance.find(
-                (p) => p.category === category
-              );
-              const questionCount = mockQuestions.filter(
-                (q) => q.category === category
-              ).length;
+              const data = categoryData.find((c) => c.category === category);
+              const questionCount = data?.progress?.questionsAvailable || data?.count || 0;
+              const firstCategoryQuestion = data?.questions[0];
+              const progress = data?.progress;
+              const accuracy = progress?.accuracy ?? 0;
+              const hasAttempts = progress && progress.attemptedQuestions > 0;
+
+              // Progress bar color based on accuracy
+              const getProgressColor = (acc: number) => {
+                if (acc >= 80) return "bg-emerald-500";
+                if (acc >= 60) return "bg-amber-500";
+                return "bg-rose-500";
+              };
 
               return (
                 <Card key={category} hover className="group">
@@ -117,46 +260,48 @@ export default function PracticeLandingPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-1">
                         <h3 className="font-semibold text-slate-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                          {getCategoryDisplayName(category)}
+                          {categoryDisplayNames[category]}
                         </h3>
-                        {performance && (
-                          <Badge
-                            variant={
-                              performance.accuracy >= 80
-                                ? "success"
-                                : performance.accuracy >= 60
-                                  ? "warning"
-                                  : "danger"
-                            }
-                            size="sm"
-                          >
-                            {performance.accuracy.toFixed(0)}%
-                          </Badge>
+                        {hasAttempts && (
+                          <span className={`text-sm font-semibold ${
+                            accuracy >= 80 ? "text-emerald-600 dark:text-emerald-400" :
+                            accuracy >= 60 ? "text-amber-600 dark:text-amber-400" :
+                            "text-rose-600 dark:text-rose-400"
+                          }`}>
+                            {Math.round(accuracy)}%
+                          </span>
                         )}
                       </div>
-                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
+                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
                         {questionCount > 0
                           ? `${questionCount} questions available`
-                          : "Coming soon"}
+                          : "No questions available"}
                       </p>
-                      {performance && (
+
+                      {/* Progress bar */}
+                      {hasAttempts && (
                         <div className="mb-3">
-                          <div className="h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                          <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                             <div
-                              className={`h-full rounded-full ${
-                                performance.accuracy >= 80
-                                  ? "bg-emerald-500"
-                                  : performance.accuracy >= 60
-                                    ? "bg-amber-500"
-                                    : "bg-rose-500"
-                              }`}
-                              style={{ width: `${performance.accuracy}%` }}
+                              className={`h-full ${getProgressColor(accuracy)} transition-all duration-300`}
+                              style={{ width: `${Math.min(accuracy, 100)}%` }}
                             />
                           </div>
                         </div>
                       )}
+
+                      {!hasAttempts && questionCount > 0 && (
+                        <div className="mb-3">
+                          <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full" />
+                        </div>
+                      )}
+
                       <Link
-                        href={`/practice/${mockQuestions.find((q) => q.category === category)?.id || "q1"}`}
+                        href={
+                          firstCategoryQuestion
+                            ? `/practice/${firstCategoryQuestion.id}?category=${category}`
+                            : "/practice"
+                        }
                       >
                         <Button
                           size="sm"
@@ -164,6 +309,7 @@ export default function PracticeLandingPage() {
                           icon={ArrowRight}
                           iconPosition="right"
                           className="group-hover:bg-blue-50 dark:group-hover:bg-blue-900/30"
+                          disabled={!firstCategoryQuestion}
                         >
                           Practice Now
                         </Button>
@@ -208,9 +354,7 @@ export default function PracticeLandingPage() {
               <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-400 flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
                 4
               </span>
-              <span>
-                Flag difficult questions for later review
-              </span>
+              <span>Take mock exams regularly to track your progress</span>
             </li>
           </ul>
         </Card>

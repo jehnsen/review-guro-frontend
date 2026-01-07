@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,23 +8,18 @@ import {
   EyeOff,
   Mail,
   Lock,
-  User,
   ArrowRight,
   Sparkles,
   Check,
 } from "lucide-react";
 import { Button, Input, Card } from "@/components/ui";
-import { useTheme } from "@/contexts/ThemeContext";
-
-// Demo credentials
-const DEMO_EMAIL = "demo@reviewguro.com";
-const DEMO_PASSWORD = "demo123";
+import { useAuth } from "@/contexts/AuthContext";
+import { ApiError } from "@/lib/api";
 
 export default function SignUpPage() {
   const router = useRouter();
-  const { theme } = useTheme();
+  const { register, isAuthenticated, isLoading: authLoading } = useAuth();
   const [formData, setFormData] = useState({
-    name: "",
     email: "",
     password: "",
     confirmPassword: "",
@@ -34,11 +29,27 @@ export default function SignUpPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      router.push("/dashboard");
+    }
+  }, [isAuthenticated, authLoading, router]);
+
   const passwordRequirements = [
-    { label: "At least 6 characters", met: formData.password.length >= 6 },
+    { label: "At least 8 characters", met: formData.password.length >= 8 },
+    { label: "Contains uppercase letter", met: /[A-Z]/.test(formData.password) },
+    { label: "Contains lowercase letter", met: /[a-z]/.test(formData.password) },
     { label: "Contains a number", met: /\d/.test(formData.password) },
-    { label: "Passwords match", met: formData.password === formData.confirmPassword && formData.confirmPassword.length > 0 },
+    {
+      label: "Passwords match",
+      met:
+        formData.password === formData.confirmPassword &&
+        formData.confirmPassword.length > 0,
+    },
   ];
+
+  const allRequirementsMet = passwordRequirements.every((req) => req.met);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -56,45 +67,53 @@ export default function SignUpPage() {
       return;
     }
 
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters");
+    if (!allRequirementsMet) {
+      setError("Please ensure all password requirements are met");
       return;
     }
 
     setIsLoading(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // In a real app, this would create an account
-    // For demo, we just log them in
-    localStorage.setItem("reviewguro_auth", "true");
-    localStorage.setItem(
-      "reviewguro_user",
-      JSON.stringify({
-        name: formData.name,
-        email: formData.email,
-        avatar: null,
-      })
-    );
-    router.push("/dashboard");
+    try {
+      await register(formData.email, formData.password);
+      router.push("/dashboard");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 409) {
+          setError("This email is already registered. Please sign in instead.");
+        } else if (err.status === 422) {
+          setError("Password must be at least 8 characters with uppercase, lowercase, and numbers.");
+        } else {
+          setError(err.message || "An error occurred. Please try again.");
+        }
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An error occurred. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const fillDemoCredentials = () => {
     setFormData({
-      name: "Demo User",
-      email: DEMO_EMAIL,
-      password: DEMO_PASSWORD,
-      confirmPassword: DEMO_PASSWORD,
+      email: `user${Date.now()}@example.com`,
+      password: "TestPass123",
+      confirmPassword: "TestPass123",
     });
     setAgreedToTerms(true);
     setError("");
   };
+
+  // Show loading while checking auth status
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4 py-12">
@@ -125,7 +144,7 @@ export default function SignUpPage() {
             </p>
           </div>
 
-          {/* Demo Account Banner */}
+          {/* Quick Setup Banner */}
           <button
             onClick={fillDemoCredentials}
             className="w-full mb-6 p-4 rounded-lg bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/20 dark:to-blue-900/20 border border-emerald-100 dark:border-emerald-800 hover:border-emerald-200 dark:hover:border-emerald-700 transition-colors group"
@@ -139,10 +158,10 @@ export default function SignUpPage() {
               </div>
               <div className="text-left flex-1">
                 <p className="font-medium text-slate-900 dark:text-white text-sm">
-                  Quick Demo Setup
+                  Quick Setup
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Click to auto-fill with demo credentials
+                  Click to auto-fill with valid credentials
                 </p>
               </div>
               <ArrowRight
@@ -160,27 +179,6 @@ export default function SignUpPage() {
                 </p>
               </div>
             )}
-
-            <div>
-              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                Full Name
-              </label>
-              <div className="relative">
-                <User
-                  size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-                <Input
-                  type="text"
-                  name="name"
-                  placeholder="Juan Dela Cruz"
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="pl-10"
-                  required
-                />
-              </div>
-            </div>
 
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
