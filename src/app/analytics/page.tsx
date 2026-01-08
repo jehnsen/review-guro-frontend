@@ -440,7 +440,8 @@ export default function AnalyticsPage() {
             {performanceByCategory?.categories && performanceByCategory.categories.length > 0 ? (
               performanceByCategory.categories.map((category) => {
                 // Handle different field names from API
-                const attempted = category.attemptedQuestions || (category as Record<string, number>).totalAttempted || 0;
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const attempted = category.attemptedQuestions || (category as any).totalAttempted || 0;
                 const correct = category.correctAnswers || 0;
                 const incorrect = attempted - correct;
                 const avgTime = category.averageTimeSeconds || 0;
