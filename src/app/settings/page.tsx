@@ -212,8 +212,10 @@ export default function SettingsPage() {
   };
 
   // Update notifications
+  type NotificationKey = "weeklyProgressReport" | "examReminders" | "dailyStudyReminder" | "reminderTime" | "pushNotifications";
+
   const handleNotificationChange = async (
-    key: keyof typeof notificationState,
+    key: NotificationKey,
     value: boolean | string
   ) => {
     const notificationState = {
