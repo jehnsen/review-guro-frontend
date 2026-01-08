@@ -9,11 +9,13 @@ import {
 } from "react";
 
 type Theme = "light" | "dark";
+type ThemePreference = "light" | "dark" | "system";
 
 interface ThemeContextType {
   theme: Theme;
+  themePreference: ThemePreference;
   toggleTheme: () => void;
-  setTheme: (theme: Theme) => void;
+  setTheme: (theme: ThemePreference) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -29,29 +31,61 @@ function applyTheme(theme: Theme) {
   }
 }
 
+function getSystemTheme(): Theme {
+  if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+    return "dark";
+  }
+  return "light";
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>("light");
+  const [themePreference, setThemePreference] = useState<ThemePreference>("system");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem("theme") as Theme | null;
-    let initialTheme: Theme = "light";
+    const savedPreference = localStorage.getItem("themePreference") as ThemePreference | null;
+    const preference = savedPreference || "system";
+    setThemePreference(preference);
 
-    if (savedTheme) {
-      initialTheme = savedTheme;
-    } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      initialTheme = "dark";
+    let initialTheme: Theme;
+    if (preference === "system") {
+      initialTheme = getSystemTheme();
+    } else {
+      initialTheme = preference;
     }
 
     setThemeState(initialTheme);
     applyTheme(initialTheme);
     setMounted(true);
+
+    // Listen for system theme changes when preference is "system"
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (e: MediaQueryListEvent) => {
+      const currentPref = localStorage.getItem("themePreference") as ThemePreference | null;
+      if (currentPref === "system" || !currentPref) {
+        const newTheme = e.matches ? "dark" : "light";
+        setThemeState(newTheme);
+        applyTheme(newTheme);
+      }
+    };
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
   }, []);
 
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
-    localStorage.setItem("theme", newTheme);
-    applyTheme(newTheme);
+  const setTheme = (newPreference: ThemePreference) => {
+    setThemePreference(newPreference);
+    localStorage.setItem("themePreference", newPreference);
+
+    let actualTheme: Theme;
+    if (newPreference === "system") {
+      actualTheme = getSystemTheme();
+    } else {
+      actualTheme = newPreference;
+    }
+
+    setThemeState(actualTheme);
+    applyTheme(actualTheme);
   };
 
   const toggleTheme = () => {
@@ -68,7 +102,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, themePreference, toggleTheme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -80,6 +114,7 @@ export function useTheme() {
   if (context === undefined) {
     return {
       theme: "light" as Theme,
+      themePreference: "system" as ThemePreference,
       toggleTheme: () => {},
       setTheme: () => {},
     };
