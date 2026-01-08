@@ -1,6 +1,6 @@
 // API Client for ReviewGuro Backend
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "NEXT_PUBLIC_API_URL"; // "http://localhost:3000/api";
 
 // Types for API responses
 export interface ApiResponse<T> {
