@@ -3,6 +3,7 @@
 import { ReactNode, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { Menu, X } from "lucide-react";
+import { AuthGuard } from "@/contexts/AuthContext";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -12,7 +13,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <AuthGuard>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       {/* Mobile Header */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-50 flex items-center justify-between px-4">
         <span className="text-xl font-bold text-slate-900 dark:text-white">
@@ -45,15 +47,16 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         <Sidebar />
       </div>
 
-      {/* Main Content */}
-      <main
-        className="
-          lg:ml-64 min-h-screen pt-16 lg:pt-0
-          transition-all duration-300
-        "
-      >
-        <div className="p-4 lg:p-8">{children}</div>
-      </main>
-    </div>
+        {/* Main Content */}
+        <main
+          className="
+            lg:ml-64 min-h-screen pt-16 lg:pt-0
+            transition-all duration-300
+          "
+        >
+          <div className="p-4 lg:p-8">{children}</div>
+        </main>
+      </div>
+    </AuthGuard>
   );
 }

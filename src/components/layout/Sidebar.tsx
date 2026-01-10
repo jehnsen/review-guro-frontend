@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   BookOpen,
@@ -16,9 +16,11 @@ import {
   Sun,
   Moon,
   User,
+  Crown,
+  Sparkles,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
-import { mockUser } from "@/lib/mock-data";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface NavItem {
   href: string;
@@ -37,7 +39,14 @@ const navItems: NavItem[] = [
 export function Sidebar() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const { theme, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/sign-in");
+  };
 
   return (
     <aside
@@ -99,6 +108,35 @@ export function Sidebar() {
 
       {/* Bottom Section */}
       <div className="p-3 border-t border-slate-200 dark:border-slate-800">
+        {/* Upgrade Banner (for non-premium users) */}
+        {!user?.isPremium && (
+          <Link
+            href="/pricing"
+            className={`
+              mb-2 flex items-center gap-3 px-3 py-2.5 w-full rounded-lg
+              bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20
+              border border-amber-200 dark:border-amber-800 hover:border-amber-300 dark:hover:border-amber-700
+              transition-colors group
+              ${isCollapsed ? "justify-center" : ""}
+            `}
+          >
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center flex-shrink-0">
+              <Crown size={16} className="text-white" />
+            </div>
+            {!isCollapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                  Upgrade
+                  <Sparkles size={12} className="text-amber-500" />
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  Get Season Pass
+                </p>
+              </div>
+            )}
+          </Link>
+        )}
+
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
@@ -132,10 +170,17 @@ export function Sidebar() {
           {!isCollapsed && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-slate-900 dark:text-white truncate">
-                {mockUser.firstName} {mockUser.lastName}
+                {user?.email?.split("@")[0] || "User"}
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                Season Pass
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1">
+                {user?.isPremium ? (
+                  <>
+                    <Crown size={10} className="text-amber-500" />
+                    Season Pass
+                  </>
+                ) : (
+                  "Free Plan"
+                )}
               </p>
             </div>
           )}
@@ -143,6 +188,7 @@ export function Sidebar() {
 
         {/* Logout */}
         <button
+          onClick={handleLogout}
           className={`
             mt-2 flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-slate-600
             hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800 transition-colors

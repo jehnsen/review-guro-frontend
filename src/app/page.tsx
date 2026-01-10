@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Brain,
   Shield,
@@ -27,6 +28,7 @@ import {
 } from "lucide-react";
 import { PublicLayout } from "@/components/layout";
 import { Button, Card, Badge } from "@/components/ui";
+import { useAuth } from "@/contexts/AuthContext";
 
 // Scroll Animation Hook
 function useScrollAnimation(threshold = 0.1) {
@@ -166,6 +168,30 @@ function BackgroundShapes() {
 }
 
 export default function LandingPage() {
+  const router = useRouter();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Redirect authenticated users to dashboard - use replace to prevent back navigation
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.replace("/dashboard");
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Show loading while checking auth status
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  // Don't render landing page if authenticated (will redirect)
+  if (isAuthenticated) {
+    return null;
+  }
+
   return (
     <PublicLayout>
       {/* Hero Section */}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,12 +13,12 @@ import {
   Check,
 } from "lucide-react";
 import { Button, Input, Card } from "@/components/ui";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, GuestGuard } from "@/contexts/AuthContext";
 import { ApiError } from "@/lib/api";
 
 export default function SignUpPage() {
   const router = useRouter();
-  const { register, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { register } = useAuth();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -28,13 +28,6 @@ export default function SignUpPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (!authLoading && isAuthenticated) {
-      router.push("/dashboard");
-    }
-  }, [isAuthenticated, authLoading, router]);
 
   const passwordRequirements = [
     { label: "At least 8 characters", met: formData.password.length >= 8 },
@@ -76,7 +69,8 @@ export default function SignUpPage() {
 
     try {
       await register(formData.email, formData.password);
-      router.push("/dashboard");
+      // Use replace to prevent going back to sign-up after registration
+      router.replace("/dashboard");
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {
@@ -106,17 +100,9 @@ export default function SignUpPage() {
     setError("");
   };
 
-  // Show loading while checking auth status
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4 py-12">
+    <GuestGuard>
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4 py-12">
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 right-20 w-72 h-72 bg-emerald-400/10 dark:bg-emerald-500/5 rounded-full blur-3xl" />
@@ -339,6 +325,7 @@ export default function SignUpPage() {
           ))}
         </div>
       </div>
-    </div>
+      </div>
+    </GuestGuard>
   );
 }

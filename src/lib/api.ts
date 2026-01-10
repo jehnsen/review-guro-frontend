@@ -1,6 +1,6 @@
 // API Client for ReviewGuro Backend
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "NEXT_PUBLIC_API_URL"; // "http://localhost:3000/api";
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
 
 // Types for API responses
 export interface ApiResponse<T> {
@@ -151,18 +151,75 @@ async function fetchApi<T>(
     (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    // Network error - server unreachable
+    throw new ApiError(0, "Unable to connect to server. Please check your internet connection and try again.");
+  }
 
-  const data = await response.json();
+  // Check content type before parsing
+  const contentType = response.headers.get("content-type");
+
+  if (!contentType || !contentType.includes("application/json")) {
+    // Server returned non-JSON response (likely HTML error page)
+    if (response.status === 404) {
+      throw new ApiError(404, "The requested resource was not found. Please try again later.");
+    } else if (response.status === 500) {
+      throw new ApiError(500, "Server error. Please try again later.");
+    } else if (response.status === 502 || response.status === 503 || response.status === 504) {
+      throw new ApiError(response.status, "Server is temporarily unavailable. Please try again later.");
+    } else {
+      throw new ApiError(response.status, "Server returned an unexpected response. Please try again later.");
+    }
+  }
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new ApiError(response.status, "Invalid response from server. Please try again later.");
+  }
 
   if (!response.ok) {
-    throw new ApiError(response.status, data.message || "An error occurred", data);
+    // Handle specific error messages from API
+    const errorMessage = data.message || data.error || getErrorMessage(response.status);
+    throw new ApiError(response.status, errorMessage, data);
   }
 
   return data;
+}
+
+// Helper to get user-friendly error messages
+function getErrorMessage(status: number): string {
+  switch (status) {
+    case 400:
+      return "Invalid request. Please check your input and try again.";
+    case 401:
+      return "Your session has expired. Please sign in again.";
+    case 403:
+      return "You don't have permission to perform this action.";
+    case 404:
+      return "The requested resource was not found.";
+    case 409:
+      return "This action conflicts with existing data.";
+    case 422:
+      return "Invalid data provided. Please check your input.";
+    case 429:
+      return "Too many requests. Please wait a moment and try again.";
+    case 500:
+      return "Server error. Please try again later.";
+    case 502:
+    case 503:
+    case 504:
+      return "Server is temporarily unavailable. Please try again later.";
+    default:
+      return "An unexpected error occurred. Please try again.";
+  }
 }
 
 // Auth API
@@ -789,8 +846,63 @@ export const subscriptionApi = {
   },
 };
 
-// ==================== PAYMENT TYPES ====================
+// ==================== PAYMENT TYPES (PayMongo Integration) ====================
 
+export type PaymentMethodType = "card" | "gcash" | "maya" | "grab_pay";
+export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | "cancelled";
+
+export interface CardDetails {
+  cardNumber: string;
+  expMonth: number;
+  expYear: number;
+  cvc: string;
+  cardholderName: string;
+}
+
+export interface CreatePaymentIntentRequest {
+  amount: number;
+  currency: string;
+  paymentMethod: PaymentMethodType;
+  description?: string;
+  metadata?: {
+    planId: string;
+    billingPeriod: string;
+    userId: string;
+  };
+  cardDetails?: CardDetails;
+}
+
+export interface PaymentIntentResponse {
+  paymentIntentId: string;
+  clientKey?: string;
+  status: PaymentStatus;
+  amount: number;
+  currency: string;
+  checkoutUrl?: string; // For e-wallet redirects
+  createdAt: string;
+}
+
+export interface PaymentStatusResponse {
+  paymentIntentId: string;
+  status: PaymentStatus;
+  amount: number;
+  paidAt?: string;
+  failureReason?: string;
+}
+
+export interface WebhookPayload {
+  type: string;
+  data: {
+    id: string;
+    attributes: {
+      status: PaymentStatus;
+      amount: number;
+      metadata?: Record<string, string>;
+    };
+  };
+}
+
+// Legacy types (for backward compatibility)
 export interface PaymentResponse {
   success: boolean;
   transactionId: string;
@@ -819,8 +931,35 @@ export interface CardPaymentRequest {
   cardholderName: string;
 }
 
-// Payment API
+// Payment API (PayMongo-ready)
 export const paymentApi = {
+  // Create a payment intent (main method for checkout)
+  async createPaymentIntent(
+    data: CreatePaymentIntentRequest
+  ): Promise<ApiResponse<PaymentIntentResponse>> {
+    return fetchApi<ApiResponse<PaymentIntentResponse>>("/payments/intent", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Check payment status
+  async getPaymentStatus(paymentIntentId: string): Promise<ApiResponse<PaymentStatusResponse>> {
+    return fetchApi<ApiResponse<PaymentStatusResponse>>(`/payments/status/${paymentIntentId}`);
+  },
+
+  // Confirm card payment (for 3D Secure)
+  async confirmPayment(
+    paymentIntentId: string,
+    paymentMethodId?: string
+  ): Promise<ApiResponse<PaymentIntentResponse>> {
+    return fetchApi<ApiResponse<PaymentIntentResponse>>(`/payments/confirm/${paymentIntentId}`, {
+      method: "POST",
+      body: JSON.stringify({ paymentMethodId }),
+    });
+  },
+
+  // Legacy methods (for backward compatibility)
   async payWithGCash(data: GCashPaymentRequest): Promise<ApiResponse<PaymentResponse>> {
     return fetchApi<ApiResponse<PaymentResponse>>("/payments/gcash", {
       method: "POST",

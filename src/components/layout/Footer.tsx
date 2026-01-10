@@ -114,7 +114,7 @@ export function Footer() {
         <div className="mt-12 pt-8 border-t border-slate-800">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <p className="text-sm text-slate-500">
-              {currentYear} ReviewGuro. All rights reserved.
+              {currentYear} ReviewGuro. All rights reserved. | Enrique IT Solutions
             </p>
             <p className="text-sm text-slate-500">
               Made with dedication for Filipino civil servants.

@@ -86,9 +86,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(() => {
+    // Clear all auth data
     authApi.logout();
     setUser(null);
-    router.push("/sign-in");
+
+    // Clear any session-related data
+    if (typeof window !== "undefined") {
+      sessionStorage.clear();
+    }
+
+    // Use replace to prevent going back to authenticated pages
+    router.replace("/sign-in");
   }, [router]);
 
   const refreshUser = useCallback(async () => {
@@ -146,7 +154,7 @@ export function withAuth<P extends object>(
 
     useEffect(() => {
       if (!isLoading && !isAuthenticated) {
-        router.push("/sign-in");
+        router.replace("/sign-in");
       }
     }, [isAuthenticated, isLoading, router]);
 
@@ -164,4 +172,83 @@ export function withAuth<P extends object>(
 
     return <WrappedComponent {...props} />;
   };
+}
+
+// Auth Guard Component for protecting routes
+export function AuthGuard({ children }: { children: ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    // Check auth status immediately and on every render
+    if (!isLoading && !isAuthenticated) {
+      router.replace("/sign-in");
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Also check on popstate (browser back/forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      const token = getAccessToken();
+      if (!token) {
+        router.replace("/sign-in");
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [router]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
+
+// Guest Guard Component for public-only routes (sign-in, sign-up)
+export function GuestGuard({ children }: { children: ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      router.replace("/dashboard");
+    }
+  }, [isAuthenticated, isLoading, router]);
+
+  // Also check on popstate (browser back/forward)
+  useEffect(() => {
+    const handlePopState = () => {
+      const token = getAccessToken();
+      if (token) {
+        router.replace("/dashboard");
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [router]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return null;
+  }
+
+  return <>{children}</>;
 }

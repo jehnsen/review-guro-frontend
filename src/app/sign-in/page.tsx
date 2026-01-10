@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Mail, Lock, ArrowRight, Sparkles } from "lucide-react";
 import { Button, Input, Card } from "@/components/ui";
-import { useAuth } from "@/contexts/AuthContext";
+import { useAuth, GuestGuard } from "@/contexts/AuthContext";
 import { ApiError } from "@/lib/api";
 
 // Test credentials from Postman collection
@@ -14,19 +14,12 @@ const TEST_PASSWORD = "TestPass123";
 
 export default function SignInPage() {
   const router = useRouter();
-  const { login, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  // Redirect if already authenticated
-  useEffect(() => {
-    if (!authLoading && isAuthenticated) {
-      router.push("/dashboard");
-    }
-  }, [isAuthenticated, authLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +28,8 @@ export default function SignInPage() {
 
     try {
       await login(email, password);
-      router.push("/dashboard");
+      // Use replace to prevent going back to sign-in after login
+      router.replace("/dashboard");
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 401) {
@@ -61,16 +55,8 @@ export default function SignInPage() {
     setError("");
   };
 
-  // Show loading while checking auth status
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
-
   return (
+    <GuestGuard>
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-slate-100 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -216,5 +202,6 @@ export default function SignInPage() {
         </div>
       </div>
     </div>
+    </GuestGuard>
   );
 }
