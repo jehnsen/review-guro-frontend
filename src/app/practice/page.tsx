@@ -11,6 +11,8 @@ import {
   ClipboardList,
   Play,
   Loader2,
+  Crown,
+  Lock,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge } from "@/components/ui";
@@ -57,8 +59,11 @@ interface CategoryData {
   progress?: CategoryProgress;
 }
 
+const FREE_QUESTION_LIMIT = 15;
+
 export default function PracticeLandingPage() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const isPremium = user?.isPremium ?? false;
   const [categoryData, setCategoryData] = useState<CategoryData[]>([]);
   const [overallStats, setOverallStats] = useState<ProgressResponse["overallStats"] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -211,6 +216,37 @@ export default function PracticeLandingPage() {
           </div>
         </Card>
 
+        {/* Free User Upgrade Banner */}
+        {!isPremium && (
+          <Card className="mb-8 border-2 border-amber-200 dark:border-amber-800 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+                  <Lock size={24} className="text-white" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                    Free Plan Limitations
+                    <Crown size={16} className="text-amber-500" />
+                  </h3>
+                  <p className="text-sm text-amber-700 dark:text-amber-400">
+                    You can practice up to {FREE_QUESTION_LIMIT} questions per category. Upgrade for unlimited access!
+                  </p>
+                </div>
+              </div>
+              <Link href="/pricing">
+                <Button
+                  variant="primary"
+                  icon={Crown}
+                  className="bg-amber-500 hover:bg-amber-600 border-amber-500 hover:border-amber-600"
+                >
+                  Upgrade Now
+                </Button>
+              </Link>
+            </div>
+          </Card>
+        )}
+
         {/* Categories Grid */}
         <div className="mb-8">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">
@@ -273,9 +309,18 @@ export default function PracticeLandingPage() {
                         )}
                       </div>
                       <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-                        {questionCount > 0
-                          ? `${questionCount} questions available`
-                          : "No questions available"}
+                        {questionCount > 0 ? (
+                          isPremium ? (
+                            `${questionCount} questions available`
+                          ) : (
+                            <span className="flex items-center gap-1">
+                              {Math.min(questionCount, FREE_QUESTION_LIMIT)} of {questionCount} questions
+                              <span className="text-amber-600 dark:text-amber-400">(free limit)</span>
+                            </span>
+                          )
+                        ) : (
+                          "No questions available"
+                        )}
                       </p>
 
                       {/* Progress bar */}

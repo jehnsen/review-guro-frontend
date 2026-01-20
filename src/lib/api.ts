@@ -848,134 +848,26 @@ export const subscriptionApi = {
 
 // ==================== PAYMENT TYPES (PayMongo Integration) ====================
 
-export type PaymentMethodType = "card" | "gcash" | "maya" | "grab_pay";
-export type PaymentStatus = "pending" | "processing" | "succeeded" | "failed" | "cancelled";
-
-export interface CardDetails {
-  cardNumber: string;
-  expMonth: number;
-  expYear: number;
-  cvc: string;
-  cardholderName: string;
+// PayMongo Checkout Session Types
+export interface CreateCheckoutRequest {
+  successUrl: string;
+  cancelUrl: string;
 }
 
-export interface CreatePaymentIntentRequest {
-  amount: number;
-  currency: string;
-  paymentMethod: PaymentMethodType;
-  description?: string;
-  metadata?: {
-    planId: string;
-    billingPeriod: string;
-    userId: string;
-  };
-  cardDetails?: CardDetails;
+export interface CheckoutSessionResponse {
+  checkoutId: string;
+  checkoutUrl: string;
+  status: "pending" | "active" | "expired" | "paid";
+  expiresAt: string;
 }
 
-export interface PaymentIntentResponse {
-  paymentIntentId: string;
-  clientKey?: string;
-  status: PaymentStatus;
-  amount: number;
-  currency: string;
-  checkoutUrl?: string; // For e-wallet redirects
-  createdAt: string;
-}
-
-export interface PaymentStatusResponse {
-  paymentIntentId: string;
-  status: PaymentStatus;
-  amount: number;
-  paidAt?: string;
-  failureReason?: string;
-}
-
-export interface WebhookPayload {
-  type: string;
-  data: {
-    id: string;
-    attributes: {
-      status: PaymentStatus;
-      amount: number;
-      metadata?: Record<string, string>;
-    };
-  };
-}
-
-// Legacy types (for backward compatibility)
-export interface PaymentResponse {
-  success: boolean;
-  transactionId: string;
-  redirectUrl?: string;
-  message?: string;
-}
-
-export interface GCashPaymentRequest {
-  amount: number;
-  phoneNumber: string;
-  returnUrl: string;
-}
-
-export interface MayaPaymentRequest {
-  amount: number;
-  phoneNumber: string;
-  returnUrl: string;
-}
-
-export interface CardPaymentRequest {
-  amount: number;
-  cardNumber: string;
-  expiryMonth: string;
-  expiryYear: string;
-  cvv: string;
-  cardholderName: string;
-}
-
-// Payment API (PayMongo-ready)
+// Payment API (PayMongo)
 export const paymentApi = {
-  // Create a payment intent (main method for checkout)
-  async createPaymentIntent(
-    data: CreatePaymentIntentRequest
-  ): Promise<ApiResponse<PaymentIntentResponse>> {
-    return fetchApi<ApiResponse<PaymentIntentResponse>>("/payments/intent", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  },
-
-  // Check payment status
-  async getPaymentStatus(paymentIntentId: string): Promise<ApiResponse<PaymentStatusResponse>> {
-    return fetchApi<ApiResponse<PaymentStatusResponse>>(`/payments/status/${paymentIntentId}`);
-  },
-
-  // Confirm card payment (for 3D Secure)
-  async confirmPayment(
-    paymentIntentId: string,
-    paymentMethodId?: string
-  ): Promise<ApiResponse<PaymentIntentResponse>> {
-    return fetchApi<ApiResponse<PaymentIntentResponse>>(`/payments/confirm/${paymentIntentId}`, {
-      method: "POST",
-      body: JSON.stringify({ paymentMethodId }),
-    });
-  },
-
-  // Legacy methods (for backward compatibility)
-  async payWithGCash(data: GCashPaymentRequest): Promise<ApiResponse<PaymentResponse>> {
-    return fetchApi<ApiResponse<PaymentResponse>>("/payments/gcash", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  },
-
-  async payWithMaya(data: MayaPaymentRequest): Promise<ApiResponse<PaymentResponse>> {
-    return fetchApi<ApiResponse<PaymentResponse>>("/payments/maya", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  },
-
-  async payWithCard(data: CardPaymentRequest): Promise<ApiResponse<PaymentResponse>> {
-    return fetchApi<ApiResponse<PaymentResponse>>("/payments/card", {
+  // Create PayMongo checkout session
+  async createCheckout(
+    data: CreateCheckoutRequest
+  ): Promise<ApiResponse<CheckoutSessionResponse>> {
+    return fetchApi<ApiResponse<CheckoutSessionResponse>>("/payments/paymongo/create-checkout", {
       method: "POST",
       body: JSON.stringify(data),
     });

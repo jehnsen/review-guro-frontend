@@ -18,6 +18,8 @@ import {
   Brain,
   Sparkles,
   Loader2,
+  Crown,
+  Lock,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, Badge, Textarea } from "@/components/ui";
@@ -57,6 +59,9 @@ interface AnsweredQuestion {
   isFlagged: boolean;
 }
 
+// Free users are limited to 15 questions per category
+const FREE_QUESTION_LIMIT = 15;
+
 export default function PracticePage() {
   const params = useParams();
   const router = useRouter();
@@ -64,7 +69,8 @@ export default function PracticePage() {
   const questionId = params.id as string;
   const categoryFilter = searchParams.get("category") as Question["category"] | null;
 
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const isPremium = user?.isPremium ?? false;
 
   const [question, setQuestion] = useState<Question | null>(null);
   const [allQuestions, setAllQuestions] = useState<Question[]>([]);
@@ -154,16 +160,21 @@ export default function PracticePage() {
           });
 
           if (response.data && response.data.length > 0) {
-            setAllQuestions(response.data);
+            // Limit questions for free users
+            const limitedQuestions = isPremium
+              ? response.data
+              : response.data.slice(0, FREE_QUESTION_LIMIT);
+
+            setAllQuestions(limitedQuestions);
 
             // Find the current question
-            const currentQ = response.data.find((q) => q.id === questionId);
+            const currentQ = limitedQuestions.find((q) => q.id === questionId);
             if (currentQ) {
               setQuestion(currentQ);
             } else {
               // If question ID not found, use first question
-              setQuestion(response.data[0]);
-              router.replace(`/practice/${response.data[0].id}${categoryFilter ? `?category=${categoryFilter}` : ""}`);
+              setQuestion(limitedQuestions[0]);
+              router.replace(`/practice/${limitedQuestions[0].id}${categoryFilter ? `?category=${categoryFilter}` : ""}`);
             }
           }
         } catch (error) {
@@ -185,7 +196,7 @@ export default function PracticePage() {
       fetchQuestions();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, authLoading, categoryFilter, questionId, router]);
+  }, [isAuthenticated, authLoading, categoryFilter, questionId, router, isPremium]);
 
   // Reset or restore state when question changes
   useEffect(() => {
@@ -626,6 +637,34 @@ export default function PracticePage() {
               )}
             </Card>
 
+            {/* Free User Limit Banner */}
+            {!isPremium && currentIndex >= totalQuestions - 1 && totalQuestions === FREE_QUESTION_LIMIT && (
+              <Card className="border-2 border-amber-200 dark:border-amber-800 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center shrink-0">
+                    <Crown size={24} className="text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-slate-900 dark:text-white mb-1">
+                      You&apos;ve reached the free limit
+                    </h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                      Free users can practice up to {FREE_QUESTION_LIMIT} questions per category. Upgrade to Season Pass for unlimited access to all questions.
+                    </p>
+                    <Link href="/pricing">
+                      <Button
+                        size="sm"
+                        icon={Crown}
+                        className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
+                      >
+                        Upgrade for Unlimited Access
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </Card>
+            )}
+
             {/* Navigation */}
             <div className="flex items-center justify-between">
               <Button
@@ -643,7 +682,14 @@ export default function PracticePage() {
                 disabled={currentIndex >= totalQuestions - 1}
                 onClick={() => navigateToQuestion("next")}
               >
-                Next Question
+                {!isPremium && currentIndex >= totalQuestions - 1 && totalQuestions === FREE_QUESTION_LIMIT ? (
+                  <span className="flex items-center gap-1">
+                    <Lock size={14} />
+                    Limit Reached
+                  </span>
+                ) : (
+                  "Next Question"
+                )}
               </Button>
             </div>
           </div>

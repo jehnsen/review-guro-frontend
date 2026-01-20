@@ -18,6 +18,9 @@ import {
   RotateCcw,
   Home,
   Loader2,
+  Crown,
+  Lock,
+  Sparkles,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge } from "@/components/ui";
@@ -56,7 +59,8 @@ const TIME_OPTIONS = [
 ];
 
 export default function MockExamPage() {
-  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { isAuthenticated, isLoading: authLoading, user } = useAuth();
+  const isPremium = user?.isPremium ?? false;
 
   // Exam state
   const [examState, setExamState] = useState<ExamState>("setup");
@@ -338,6 +342,98 @@ export default function MockExamPage() {
 
   // Setup Screen
   if (examState === "setup") {
+    // Premium Gate - Show upgrade prompt for free users
+    if (!isPremium) {
+      return (
+        <DashboardLayout>
+          <div className="max-w-2xl mx-auto">
+            <div className="text-center mb-8">
+              <div className="w-20 h-20 bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 rounded-2xl flex items-center justify-center mx-auto mb-4 relative">
+                <Clock size={36} className="text-amber-600 dark:text-amber-400" />
+                <div className="absolute -top-2 -right-2 w-8 h-8 bg-gradient-to-br from-amber-400 to-amber-600 rounded-full flex items-center justify-center">
+                  <Lock size={14} className="text-white" />
+                </div>
+              </div>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                Mock Examination
+              </h1>
+              <p className="text-slate-600 dark:text-slate-400">
+                Simulate real exam conditions with timed practice
+              </p>
+            </div>
+
+            {/* Premium Gate Card */}
+            <Card className="mb-6 border-2 border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
+              <div className="text-center py-4">
+                <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Crown size={32} className="text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                  Premium Feature
+                </h2>
+                <p className="text-slate-600 dark:text-slate-400 mb-6 max-w-md mx-auto">
+                  Mock Exams are available exclusively for Season Pass holders. Upgrade to access unlimited mock exams that simulate real Civil Service Exam conditions.
+                </p>
+
+                {/* Features List */}
+                <div className="grid grid-cols-2 gap-3 mb-6 text-left max-w-md mx-auto">
+                  {[
+                    "Unlimited mock exams",
+                    "Real exam timing (170 mins)",
+                    "All 5 categories",
+                    "Detailed results review",
+                    "Progress tracking",
+                    "Performance analytics",
+                  ].map((feature, index) => (
+                    <div key={index} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                      <Sparkles size={14} className="text-amber-500 shrink-0" />
+                      <span>{feature}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <Link href="/pricing">
+                  <Button
+                    size="lg"
+                    icon={Crown}
+                    className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
+                  >
+                    Upgrade to Season Pass
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+
+            {/* What you're missing */}
+            <Card className="bg-slate-50 dark:bg-slate-800/50">
+              <CardTitle className="mb-4">What Mock Exams Offer</CardTitle>
+              <ul className="space-y-3 text-sm text-slate-600 dark:text-slate-400">
+                <li className="flex items-start gap-3">
+                  <Clock size={18} className="text-blue-500 shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-slate-900 dark:text-white">Timed Practice:</strong> Experience real exam pressure with countdown timers matching actual CSE duration.
+                  </span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <Target size={18} className="text-emerald-500 shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-slate-900 dark:text-white">Passing Score Tracking:</strong> Know if you&apos;re ready with 80% passing score benchmarks.
+                  </span>
+                </li>
+                <li className="flex items-start gap-3">
+                  <BarChart3 size={18} className="text-purple-500 shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-slate-900 dark:text-white">Detailed Review:</strong> Review each question with explanations after completing the exam.
+                  </span>
+                </li>
+              </ul>
+            </Card>
+          </div>
+        </DashboardLayout>
+      );
+    }
+
+    // Premium users - show the full setup screen
     return (
       <DashboardLayout>
         <div className="max-w-2xl mx-auto">
