@@ -537,11 +537,20 @@ export const mockExamApi = {
 
 // ==================== ANALYTICS TYPES ====================
 
+export interface StreakResponse {
+  current: number;
+  longest: number;
+  lastActivityDate: string;
+  canRepair?: boolean;
+  missedDays?: number;
+  repairCost?: number;
+}
+
 export interface DashboardOverview {
   totalQuestions: number;
   accuracy: number;
   studyTime: { hours: number; minutes: number };
-  streak: { current: number; longest: number };
+  streak: StreakResponse;
   mockExams: { total: number; completed: number; averageScore: number; passRate: number };
 }
 
@@ -588,15 +597,6 @@ export interface AIInsightsResponse {
   recommendations: string[];
   focusAreas: Question["category"][];
   encouragement: string;
-}
-
-export interface StreakResponse {
-  current: number;
-  longest: number;
-  lastActivityDate: string;
-  canRepair?: boolean;
-  missedDays?: number;
-  repairCost?: number;
 }
 
 export interface ExplanationLimitsResponse {
