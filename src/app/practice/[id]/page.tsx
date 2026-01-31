@@ -26,6 +26,7 @@ import { Button, Card, Badge, Textarea } from "@/components/ui";
 import {
   questionsApi,
   practiceApi,
+  analyticsApi,
   Question,
   categoryDisplayNames,
   difficultyColors,
@@ -82,25 +83,41 @@ export default function PracticePage() {
     // Try to restore session start time from sessionStorage
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem("practice_session_start");
-      if (stored) return parseInt(stored, 10);
       const now = Date.now();
+
+      if (stored) {
+        const storedTime = parseInt(stored, 10);
+        const elapsedHours = (now - storedTime) / (1000 * 60 * 60);
+
+        // Reset if session is older than 1 hour (user probably left and came back)
+        if (elapsedHours > 1) {
+          sessionStorage.setItem("practice_session_start", now.toString());
+          return now;
+        }
+        return storedTime;
+      }
+
       sessionStorage.setItem("practice_session_start", now.toString());
       return now;
     }
     return Date.now();
   });
+
   const [timeSpent, setTimeSpent] = useState(() => {
     // Calculate initial time based on session start
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem("practice_session_start");
       if (stored) {
-        return Math.floor((Date.now() - parseInt(stored, 10)) / 1000);
+        const elapsed = Math.floor((Date.now() - parseInt(stored, 10)) / 1000);
+        // Cap at 1 hour to prevent unrealistic times
+        return Math.min(elapsed, 3600);
       }
     }
     return 0;
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDailyLimitModal, setShowDailyLimitModal] = useState(false);
   const [tutorState, setTutorState] = useState<TutorState>({
     showHint: false,
     hintText: "",
@@ -110,6 +127,31 @@ export default function PracticePage() {
     isTyping: false,
   });
   const [chatInput, setChatInput] = useState("");
+
+  // Explanation view tracking for free users (taste test: first 3 per day are free)
+  const [explanationsViewedToday, setExplanationsViewedToday] = useState(0);
+  const [remainingExplanations, setRemainingExplanations] = useState(3);
+  const [unlockedExplanations, setUnlockedExplanations] = useState<Set<string>>(new Set());
+  const FREE_EXPLANATIONS_PER_DAY = 3;
+
+  // Fetch explanation limits from backend on mount
+  useEffect(() => {
+    async function fetchExplanationLimits() {
+      if (!isAuthenticated || authLoading || isPremium) return;
+
+      try {
+        const response = await analyticsApi.getExplanationLimits();
+        if (response.data) {
+          setExplanationsViewedToday(response.data.viewedToday);
+          setRemainingExplanations(response.data.remainingToday);
+        }
+      } catch (error) {
+        console.error("Error fetching explanation limits:", error);
+      }
+    }
+
+    fetchExplanationLimits();
+  }, [isAuthenticated, authLoading, isPremium]);
 
   // Generate a storage key that includes category filter for separate sessions
   const storageKey = `practice_answered_questions${categoryFilter ? `_${categoryFilter}` : ""}`;
@@ -258,8 +300,13 @@ export default function PracticePage() {
   const totalQuestions = allQuestions.length;
 
   const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    }
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
@@ -285,6 +332,29 @@ export default function PracticePage() {
           explanation: response.data.explanation,
         }));
 
+        // Auto-unlock explanation if user is premium or has quota remaining
+        if (isPremium || explanationsViewedToday < FREE_EXPLANATIONS_PER_DAY) {
+          if (!isPremium && !unlockedExplanations.has(question.id)) {
+            // Only increment if not already unlocked - call backend API
+            try {
+              const viewResponse = await analyticsApi.recordExplanationView();
+              if (viewResponse.data) {
+                setExplanationsViewedToday(viewResponse.data.viewedToday);
+                setRemainingExplanations(viewResponse.data.remainingToday);
+                setUnlockedExplanations((prev) => new Set([...prev, question.id]));
+              }
+            } catch (err) {
+              // Fallback to optimistic update
+              setUnlockedExplanations((prev) => new Set([...prev, question.id]));
+              setExplanationsViewedToday((prev) => prev + 1);
+              setRemainingExplanations((prev) => Math.max(0, prev - 1));
+            }
+          } else if (isPremium && !unlockedExplanations.has(question.id)) {
+            // For premium users, mark as unlocked without calling API
+            setUnlockedExplanations((prev) => new Set([...prev, question.id]));
+          }
+        }
+
         // Save the answer to ref and sessionStorage to retain state when navigating back
         answeredQuestionsRef.current[question.id] = {
           selectedOption,
@@ -295,25 +365,54 @@ export default function PracticePage() {
         };
         sessionStorage.setItem(storageKey, JSON.stringify(answeredQuestionsRef.current));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting answer:", error);
-      // Fallback to basic feedback
-      setAnswerState("incorrect");
-      setTutorState((prev) => ({
-        ...prev,
-        showExplanation: true,
-        explanation: "Unable to load explanation. Please try again.",
-      }));
 
-      // Save the fallback answer state too
-      answeredQuestionsRef.current[question.id] = {
-        selectedOption,
-        answerState: "incorrect",
-        correctOptionId: "",
-        explanation: "Unable to load explanation. Please try again.",
-        isFlagged,
-      };
-      sessionStorage.setItem(storageKey, JSON.stringify(answeredQuestionsRef.current));
+      // Check if this is a 403 Forbidden error (daily limit reached)
+      if (error?.status === 403) {
+        // Show daily limit error with modal
+        setAnswerState("unanswered");
+        setSelectedOption(null);
+        setShowDailyLimitModal(true);
+      } else {
+        // Fallback to basic feedback for other errors
+        setAnswerState("incorrect");
+        setTutorState((prev) => ({
+          ...prev,
+          showExplanation: true,
+          explanation: "Unable to load explanation. Please try again.",
+        }));
+
+        // Auto-unlock explanation for error case too
+        if (question && (isPremium || explanationsViewedToday < FREE_EXPLANATIONS_PER_DAY)) {
+          if (!isPremium && !unlockedExplanations.has(question.id)) {
+            try {
+              const viewResponse = await analyticsApi.recordExplanationView();
+              if (viewResponse.data) {
+                setExplanationsViewedToday(viewResponse.data.viewedToday);
+                setRemainingExplanations(viewResponse.data.remainingToday);
+                setUnlockedExplanations((prev) => new Set([...prev, question.id]));
+              }
+            } catch (err) {
+              setUnlockedExplanations((prev) => new Set([...prev, question.id]));
+              setExplanationsViewedToday((prev) => prev + 1);
+              setRemainingExplanations((prev) => Math.max(0, prev - 1));
+            }
+          } else if (isPremium && !unlockedExplanations.has(question.id)) {
+            setUnlockedExplanations((prev) => new Set([...prev, question.id]));
+          }
+        }
+
+        // Save the fallback answer state too
+        answeredQuestionsRef.current[question.id] = {
+          selectedOption,
+          answerState: "incorrect",
+          correctOptionId: "",
+          explanation: "Unable to load explanation. Please try again.",
+          isFlagged,
+        };
+        sessionStorage.setItem(storageKey, JSON.stringify(answeredQuestionsRef.current));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -391,6 +490,36 @@ export default function PracticePage() {
       hintText: fallbackHints[question.category] || "Read the question carefully and eliminate obviously wrong answers first.",
       isTyping: false,
     }));
+  };
+
+  // Unlock explanation for a specific question
+  const unlockExplanation = async (questionId: string) => {
+    if (isPremium) return; // Premium users have all explanations unlocked
+
+    if (explanationsViewedToday < FREE_EXPLANATIONS_PER_DAY) {
+      try {
+        // Call backend API to record the view
+        const response = await analyticsApi.recordExplanationView();
+
+        if (response.data) {
+          // Update local state with backend response
+          setExplanationsViewedToday(response.data.viewedToday);
+          setRemainingExplanations(response.data.remainingToday);
+          setUnlockedExplanations((prev) => new Set([...prev, questionId]));
+        }
+      } catch (error) {
+        console.error("Error unlocking explanation:", error);
+        // Fallback to optimistic update if API fails
+        setUnlockedExplanations((prev) => new Set([...prev, questionId]));
+        setExplanationsViewedToday((prev) => prev + 1);
+        setRemainingExplanations((prev) => Math.max(0, prev - 1));
+      }
+    }
+  };
+
+  // Check if explanation is unlocked for a question
+  const isExplanationUnlocked = (questionId: string) => {
+    return isPremium || unlockedExplanations.has(questionId);
   };
 
   const handleSendMessage = async () => {
@@ -556,16 +685,16 @@ export default function PracticePage() {
 
                   if (showResult) {
                     if (isCorrect) {
-                      // Always highlight the correct answer in green
+                      // Always highlight the correct answer in green - subtle pastel
                       optionClasses +=
-                        "border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20";
+                        "border-emerald-300 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-900/10";
                     } else if (isSelected && answerState === "incorrect") {
-                      // Highlight wrong selection in red
+                      // Highlight wrong selection in red - subtle pastel
                       optionClasses +=
-                        "border-rose-500 bg-rose-50 dark:bg-rose-900/20";
+                        "border-rose-300 dark:border-rose-700 bg-rose-50/50 dark:bg-rose-900/10";
                     } else {
                       optionClasses +=
-                        "border-slate-200 dark:border-slate-700 opacity-50";
+                        "border-slate-200 dark:border-slate-700 opacity-40";
                     }
                   } else {
                     if (isSelected) {
@@ -702,8 +831,8 @@ export default function PracticePage() {
                 answerState === "unanswered"
                   ? "bg-slate-50 dark:bg-slate-800/50"
                   : answerState === "correct"
-                    ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800"
-                    : "bg-rose-50 dark:bg-rose-900/20 border-rose-200 dark:border-rose-800"
+                    ? "bg-emerald-50/40 dark:bg-emerald-900/10 border-emerald-200/60 dark:border-emerald-800/40"
+                    : "bg-rose-50/40 dark:bg-rose-900/10 border-rose-200/60 dark:border-rose-800/40"
               }`}
             >
               <div className="flex items-center gap-3 mb-4">
@@ -831,122 +960,243 @@ export default function PracticePage() {
               )}
             </Card>
 
-            {/* Explanation Card (After Answer) */}
-            {tutorState.showExplanation && tutorState.explanation && (
-              <Card>
-                <div className="flex items-center gap-2 mb-4">
-                  <Sparkles size={18} className="text-blue-600 dark:text-blue-400" />
-                  <h3 className="font-semibold text-slate-900 dark:text-white">
-                    Explanation
-                  </h3>
+            {/* Explanation Card (After Answer) - With Freemium Blur */}
+            {tutorState.showExplanation && tutorState.explanation && question && (
+              <Card className="relative">
+                {!isExplanationUnlocked(question.id) && (
+                  <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/80 to-white dark:via-slate-900/80 dark:to-slate-900 rounded-lg flex items-center justify-center z-10 backdrop-blur-sm">
+                    <div className="text-center p-4">
+                      <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <Lock size={20} className="text-amber-600 dark:text-amber-400" />
+                      </div>
+                      {explanationsViewedToday < FREE_EXPLANATIONS_PER_DAY ? (
+                        <>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white mb-2">
+                            {FREE_EXPLANATIONS_PER_DAY - explanationsViewedToday} free explanations remaining today
+                          </p>
+                          <Button
+                            size="sm"
+                            onClick={() => unlockExplanation(question.id)}
+                            className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                          >
+                            Unlock Explanation
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-slate-900 dark:text-white mb-1">
+                            Explanation Locked
+                          </p>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mb-3 max-w-xs">
+                            You&apos;ve used all {FREE_EXPLANATIONS_PER_DAY} free explanations today. Upgrade for unlimited access.
+                          </p>
+                          <Link href="/pricing">
+                            <Button
+                              size="sm"
+                              icon={Crown}
+                              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
+                            >
+                              Upgrade Now
+                            </Button>
+                          </Link>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className={!isExplanationUnlocked(question.id) ? "blur-sm select-none" : ""}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <Sparkles size={18} className="text-blue-600 dark:text-blue-400" />
+                    <h3 className="font-semibold text-slate-900 dark:text-white">
+                      Explanation
+                    </h3>
+                  </div>
+                  <p className="text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
+                    {tutorState.explanation}
+                  </p>
                 </div>
-                <p className="text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
-                  {tutorState.explanation}
-                </p>
               </Card>
             )}
 
-            {/* Chat with AI Tutor */}
-            <Card>
-              <div className="flex items-center gap-2 mb-4">
-                <MessageCircle
-                  size={18}
-                  className="text-blue-600 dark:text-blue-400"
-                />
-                <h3 className="font-semibold text-slate-900 dark:text-white">
-                  Ask AI Tutor
-                </h3>
-              </div>
-
-              {/* Chat Messages */}
-              {tutorState.messages.length > 0 && (
-                <div className="space-y-4 mb-4 max-h-64 overflow-y-auto">
-                  {tutorState.messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex ${
-                        msg.role === "user" ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[85%] p-3 rounded-xl text-sm whitespace-pre-line ${
-                          msg.role === "user"
-                            ? "bg-blue-600 text-white rounded-br-none"
-                            : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-bl-none"
-                        }`}
+            {/* Chat with AI Tutor - Premium Feature */}
+            <Card className={!isPremium ? "relative" : ""}>
+              {!isPremium && (
+                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/90 to-white dark:via-slate-900/90 dark:to-slate-900 rounded-lg flex items-center justify-center z-10 backdrop-blur-sm">
+                  <div className="text-center p-6">
+                    <div className="w-14 h-14 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <Lock size={24} className="text-amber-600 dark:text-amber-400" />
+                    </div>
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">
+                      AI Tutor is Premium Only
+                    </h4>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4 max-w-xs">
+                      Get personalized explanations and instant help with our AI-powered tutor
+                    </p>
+                    <Link href="/pricing">
+                      <Button
+                        size="sm"
+                        icon={Crown}
+                        className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
                       >
-                        {msg.content}
-                      </div>
-                    </div>
-                  ))}
-                  {tutorState.isTyping && (
-                    <div className="flex justify-start">
-                      <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl rounded-bl-none">
-                        <div className="flex gap-1">
-                          <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
-                          <span
-                            className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
-                            style={{ animationDelay: "0.1s" }}
-                          />
-                          <span
-                            className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
-                            style={{ animationDelay: "0.2s" }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                        Upgrade to Premium
+                      </Button>
+                    </Link>
+                  </div>
                 </div>
               )}
 
-              {/* Chat Input */}
-              <div className="flex gap-2">
-                <Textarea
-                  placeholder="Ask a follow-up question..."
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  className="min-h-[44px] max-h-[120px]"
-                  rows={1}
-                />
-                <Button
-                  icon={Send}
-                  onClick={handleSendMessage}
-                  disabled={!chatInput.trim() || tutorState.isTyping}
-                />
-              </div>
+              <div className={!isPremium ? "blur-sm select-none pointer-events-none" : ""}>
+                <div className="flex items-center gap-2 mb-4">
+                  <MessageCircle
+                    size={18}
+                    className="text-blue-600 dark:text-blue-400"
+                  />
+                  <h3 className="font-semibold text-slate-900 dark:text-white">
+                    Ask AI Tutor
+                  </h3>
+                </div>
 
-              {/* Suggested Questions */}
-              <div className="mt-4">
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                  Suggested questions:
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    "Can you explain this differently?",
-                    "What's the key concept here?",
-                    "Give me a tip for similar questions",
-                  ].map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      className="text-xs px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                      onClick={() => {
-                        setChatInput(suggestion);
-                      }}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
+                {/* Chat Messages */}
+                {tutorState.messages.length > 0 && (
+                  <div className="space-y-4 mb-4 max-h-64 overflow-y-auto">
+                    {tutorState.messages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${
+                          msg.role === "user" ? "justify-end" : "justify-start"
+                        }`}
+                      >
+                        <div
+                          className={`max-w-[85%] p-3 rounded-xl text-sm whitespace-pre-line ${
+                            msg.role === "user"
+                              ? "bg-blue-600 text-white rounded-br-none"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-bl-none"
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))}
+                    {tutorState.isTyping && (
+                      <div className="flex justify-start">
+                        <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded-xl rounded-bl-none">
+                          <div className="flex gap-1">
+                            <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" />
+                            <span
+                              className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                              style={{ animationDelay: "0.1s" }}
+                            />
+                            <span
+                              className="w-2 h-2 bg-slate-400 rounded-full animate-bounce"
+                              style={{ animationDelay: "0.2s" }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Chat Input */}
+                <div className="flex gap-2">
+                  <Textarea
+                    placeholder="Ask a follow-up question..."
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage();
+                      }
+                    }}
+                    className="min-h-[44px] max-h-[120px]"
+                    rows={1}
+                  />
+                  <Button
+                    icon={Send}
+                    onClick={handleSendMessage}
+                    disabled={!chatInput.trim() || tutorState.isTyping}
+                  />
+                </div>
+
+                {/* Suggested Questions */}
+                <div className="mt-4">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                    Suggested questions:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      "Can you explain this differently?",
+                      "What's the key concept here?",
+                      "Give me a tip for similar questions",
+                    ].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        className="text-xs px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                        onClick={() => {
+                          setChatInput(suggestion);
+                        }}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </Card>
           </div>
         </div>
+
+        {/* Daily Limit Reached Modal */}
+        {showDailyLimitModal && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 animate-fade-in">
+            <Card className="max-w-md w-full relative animate-scale-in">
+              <div className="text-center">
+                <div className="w-20 h-20 bg-gradient-to-br from-rose-100 to-orange-100 dark:from-rose-900/30 dark:to-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Clock size={40} className="text-rose-600 dark:text-rose-400" />
+                </div>
+
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                  Daily Practice Limit Reached
+                </h2>
+
+                <p className="text-slate-600 dark:text-slate-400 mb-6">
+                  Free users can answer up to <span className="font-semibold text-slate-900 dark:text-white">15 questions per day</span>. Upgrade to Season Pass for unlimited practice questions.
+                </p>
+
+                <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Sparkles size={16} className="text-blue-600 dark:text-blue-400" />
+                    <p className="text-sm font-semibold text-blue-900 dark:text-blue-100">
+                      Your limit will reset tomorrow!
+                    </p>
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-300">
+                    Come back in 24 hours to continue practicing for free, or upgrade now for unlimited access.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowDailyLimitModal(false)}
+                  >
+                    Close
+                  </Button>
+                  <Link href="/pricing" className="flex-1">
+                    <Button
+                      fullWidth
+                      icon={Crown}
+                      className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
+                    >
+                      Upgrade Now
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

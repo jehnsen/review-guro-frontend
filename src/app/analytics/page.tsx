@@ -13,9 +13,11 @@ import {
   ChevronRight,
   Loader2,
   FileText,
+  Heart,
+  Share2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
-import { Card, CardTitle, Badge } from "@/components/ui";
+import { Card, CardTitle, Badge, Button } from "@/components/ui";
 import {
   analyticsApi,
   DashboardOverview,
@@ -35,6 +37,8 @@ export default function AnalyticsPage() {
   const [strengthsWeaknesses, setStrengthsWeaknesses] = useState<StrengthsWeaknessesResponse | null>(null);
   const [performanceByCategory, setPerformanceByCategory] = useState<PerformanceByCategoryResponse | null>(null);
   const [aiInsights, setAiInsights] = useState<AIInsightsResponse | null>(null);
+  const [isRepairingStreak, setIsRepairingStreak] = useState(false);
+  const [showStreakRepairModal, setShowStreakRepairModal] = useState(false);
 
   useEffect(() => {
     async function fetchAnalytics() {
@@ -107,11 +111,49 @@ export default function AnalyticsPage() {
   }, [isAuthenticated, authLoading]);
 
   // Format study time from hours and minutes
-  const formatStudyTime = (studyTime: { hours: number; minutes: number } | undefined) => {
+  const formatStudyTime = (studyTime: { hours: number; minutes: number} | undefined) => {
     if (!studyTime) return "0h 0m";
     const { hours, minutes } = studyTime;
     if (hours === 0) return `${minutes}m`;
     return `${hours}h ${minutes}m`;
+  };
+
+  // Handle streak repair
+  const handleStreakRepair = async (method: 'share' | 'pay') => {
+    setIsRepairingStreak(true);
+    try {
+      if (method === 'share') {
+        // In a real app, this would trigger a share dialog
+        // For now, just simulate the API call
+        const shareUrl = `${window.location.origin}/signup?ref=${dashboard?.streak?.current || 0}`;
+        if (navigator.share) {
+          await navigator.share({
+            title: 'ReviewGuro - CSE Exam Prep',
+            text: 'Join me in preparing for the CSE exam!',
+            url: shareUrl,
+          });
+        } else {
+          // Fallback: copy to clipboard
+          await navigator.clipboard.writeText(shareUrl);
+          alert('Share link copied to clipboard!');
+        }
+      }
+
+      // Call the repair API
+      const response = await analyticsApi.repairStreak();
+      if (response.data && dashboard) {
+        setDashboard({
+          ...dashboard,
+          streak: response.data,
+        });
+      }
+      setShowStreakRepairModal(false);
+    } catch (error) {
+      console.error('Error repairing streak:', error);
+      alert('Failed to repair streak. Please try again.');
+    } finally {
+      setIsRepairingStreak(false);
+    }
   };
 
   // Calculate weekly stats from weekly activity data
@@ -127,10 +169,10 @@ export default function AnalyticsPage() {
     ? Math.round((weeklyStats.correctAnswers / weeklyStats.totalQuestions) * 100)
     : 0;
 
-  // Calculate max for chart scaling
+  // Calculate max for chart scaling with padding for better visualization
   const maxQuestions = weeklyActivity?.data
-    ? Math.max(...weeklyActivity.data.map((d) => d.questionsAttempted), 1)
-    : 1;
+    ? Math.max(...weeklyActivity.data.map((d) => d.questionsAttempted), 10) * 1.1 // Add 10% padding
+    : 10;
 
   if (authLoading || isLoading) {
     return (
@@ -226,18 +268,33 @@ export default function AnalyticsPage() {
               <div className="w-10 h-10 rounded-lg bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center">
                 <Zap size={20} className="text-amber-600 dark:text-amber-400" />
               </div>
-              {dashboard?.streak && dashboard.streak.current > 0 && (
+              {dashboard?.streak && dashboard.streak.current > 0 ? (
                 <Badge variant="warning" size="sm">
                   Active
+                </Badge>
+              ) : dashboard?.streak?.canRepair && (
+                <Badge variant="danger" size="sm">
+                  Broken
                 </Badge>
               )}
             </div>
             <p className="text-2xl font-bold text-slate-900 dark:text-white">
               {dashboard?.streak?.current || 0} days
             </p>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
               Current Streak {dashboard?.streak?.longest ? `(Best: ${dashboard.streak.longest})` : ""}
             </p>
+            {dashboard?.streak?.canRepair && dashboard?.streak?.missedDays && dashboard.streak.missedDays <= 1 && (
+              <Button
+                size="sm"
+                variant="outline"
+                icon={Heart}
+                onClick={() => setShowStreakRepairModal(true)}
+                className="w-full border-rose-200 dark:border-rose-800 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+              >
+                Repair Streak
+              </Button>
+            )}
           </Card>
         </div>
 
@@ -296,38 +353,67 @@ export default function AnalyticsPage() {
               </div>
             </div>
 
-            {/* Chart */}
-            <div className="flex items-end gap-4 h-48">
-              {weeklyActivity?.data && weeklyActivity.data.length > 0 ? (
-                weeklyActivity.data.map((day) => {
-                  const questionHeight = (day.questionsAttempted / maxQuestions) * 100;
-                  const correctHeight = (day.correctAnswers / maxQuestions) * 100;
+            {/* Chart - Fixed height container with proper scaling */}
+            <div className="relative">
+              {/* Y-axis labels */}
+              <div className="absolute left-0 top-0 bottom-12 w-8 flex flex-col justify-between text-xs text-slate-400">
+                <span>{Math.round(maxQuestions)}</span>
+                <span>{Math.round(maxQuestions * 0.75)}</span>
+                <span>{Math.round(maxQuestions * 0.5)}</span>
+                <span>{Math.round(maxQuestions * 0.25)}</span>
+                <span>0</span>
+              </div>
 
-                  return (
-                    <div key={day.date} className="flex-1 flex flex-col items-center gap-2">
-                      <div className="w-full flex items-end justify-center gap-1 h-40">
-                        <div
-                          className="w-5 bg-blue-500 rounded-t transition-all duration-300"
-                          style={{ height: `${Math.max(questionHeight, 2)}%` }}
-                          title={`${day.questionsAttempted} questions`}
-                        />
-                        <div
-                          className="w-5 bg-emerald-500 rounded-t transition-all duration-300"
-                          style={{ height: `${Math.max(correctHeight, 2)}%` }}
-                          title={`${day.correctAnswers} correct`}
-                        />
+              {/* Chart area with fixed height */}
+              <div className="ml-10 flex items-end gap-2 sm:gap-4" style={{ height: '160px' }}>
+                {weeklyActivity?.data && weeklyActivity.data.length > 0 ? (
+                  weeklyActivity.data.map((day) => {
+                    // Calculate heights as percentage of fixed container height
+                    const questionHeight = Math.min((day.questionsAttempted / maxQuestions) * 100, 100);
+                    const correctHeight = Math.min((day.correctAnswers / maxQuestions) * 100, 100);
+                    const hasActivity = day.questionsAttempted > 0;
+
+                    return (
+                      <div key={day.date} className="flex-1 flex flex-col items-center gap-2 min-w-0">
+                        <div className="w-full flex items-end justify-center gap-0.5 sm:gap-1 relative group" style={{ height: '140px' }}>
+                          {/* Tooltip on hover */}
+                          {hasActivity && (
+                            <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 shadow-lg">
+                              <div className="font-semibold mb-1">{day.day}</div>
+                              <div className="text-blue-300 dark:text-blue-600">Questions: {day.questionsAttempted}</div>
+                              <div className="text-emerald-300 dark:text-emerald-600">Correct: {day.correctAnswers}</div>
+                              {day.questionsAttempted > 0 && (
+                                <div className="text-slate-300 dark:text-slate-600 mt-1">
+                                  {Math.round((day.correctAnswers / day.questionsAttempted) * 100)}% accuracy
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Question bar */}
+                          <div
+                            className="w-full max-w-5 sm:max-w-6 bg-blue-500 hover:bg-blue-600 rounded-t transition-all duration-300 cursor-pointer"
+                            style={{ height: hasActivity ? `${Math.max(questionHeight, 3)}%` : '3%' }}
+                          />
+
+                          {/* Correct answer bar */}
+                          <div
+                            className="w-full max-w-5 sm:max-w-6 bg-emerald-500 hover:bg-emerald-600 rounded-t transition-all duration-300 cursor-pointer"
+                            style={{ height: hasActivity ? `${Math.max(correctHeight, 3)}%` : '3%' }}
+                          />
+                        </div>
+                        <span className="text-xs text-slate-500 dark:text-slate-400 truncate w-full text-center">
+                          {day.day}
+                        </span>
                       </div>
-                      <span className="text-xs text-slate-500 dark:text-slate-400">
-                        {day.day}
-                      </span>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="flex-1 flex items-center justify-center h-40 text-slate-400">
-                  No activity data yet. Start practicing!
-                </div>
-              )}
+                    );
+                  })
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-slate-400" style={{ height: '140px' }}>
+                    No activity data yet. Start practicing!
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Weekly Summary */}
@@ -605,6 +691,84 @@ export default function AnalyticsPage() {
             </div>
           )}
         </Card>
+
+        {/* Streak Repair Modal */}
+        {showStreakRepairModal && dashboard?.streak?.canRepair && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <Card className="max-w-md w-full">
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Heart size={32} className="text-rose-600 dark:text-rose-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+                  Repair Your Streak?
+                </h2>
+                <p className="text-slate-600 dark:text-slate-400">
+                  You missed {dashboard.streak.missedDays} day{dashboard.streak.missedDays !== 1 ? 's' : ''}. Repair your {dashboard.streak.longest}-day streak and keep going!
+                </p>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                {/* Share Option */}
+                <button
+                  onClick={() => handleStreakRepair('share')}
+                  disabled={isRepairingStreak}
+                  className="w-full p-4 rounded-xl border-2 border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center">
+                      <Share2 size={20} className="text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        Share & Repair (Free)
+                      </p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        Share ReviewGuro with friends to repair your streak
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                {/* Pay Option */}
+                <button
+                  onClick={() => handleStreakRepair('pay')}
+                  disabled={isRepairingStreak}
+                  className="w-full p-4 rounded-xl border-2 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-amber-500 rounded-lg flex items-center justify-center">
+                      <Zap size={20} className="text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        Instant Repair - ₱{dashboard.streak.repairCost || 50}
+                      </p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        Quickly restore your streak
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  variant="ghost"
+                  fullWidth
+                  onClick={() => setShowStreakRepairModal(false)}
+                  disabled={isRepairingStreak}
+                >
+                  Cancel
+                </Button>
+              </div>
+
+              <p className="text-xs text-center text-slate-500 dark:text-slate-400 mt-4">
+                Streak repair is only available for up to 1 missed day
+              </p>
+            </Card>
+          </div>
+        )}
       </div>
     </DashboardLayout>
   );

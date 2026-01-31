@@ -13,6 +13,8 @@ import {
   Loader2,
   Crown,
   Lock,
+  Target,
+  AlertCircle,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge } from "@/components/ui";
@@ -22,6 +24,7 @@ import {
   Question,
   CategoryProgress,
   ProgressResponse,
+  PracticeLimitsResponse,
   categoryDisplayNames,
 } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
@@ -68,6 +71,31 @@ export default function PracticeLandingPage() {
   const [overallStats, setOverallStats] = useState<ProgressResponse["overallStats"] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Daily limits state
+  const [dailyLimits, setDailyLimits] = useState<PracticeLimitsResponse | null>(null);
+  const [isLoadingLimits, setIsLoadingLimits] = useState(!isPremium);
+
+  // Fetch daily limits for free users
+  useEffect(() => {
+    async function fetchLimits() {
+      if (!isAuthenticated || authLoading || isPremium) return;
+
+      setIsLoadingLimits(true);
+      try {
+        const response = await practiceApi.getLimits();
+        if (response.data) {
+          setDailyLimits(response.data);
+        }
+      } catch (error) {
+        console.error("Error fetching practice limits:", error);
+      } finally {
+        setIsLoadingLimits(false);
+      }
+    }
+
+    fetchLimits();
+  }, [isAuthenticated, authLoading, isPremium]);
 
   useEffect(() => {
     async function fetchData() {
@@ -123,7 +151,7 @@ export default function PracticeLandingPage() {
   const firstQuestion = categoryData.find((c) => c.questions.length > 0)
     ?.questions[0];
 
-  if (authLoading || isLoading) {
+  if (authLoading || isLoading || isLoadingLimits) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-[400px]">
@@ -216,35 +244,71 @@ export default function PracticeLandingPage() {
           </div>
         </Card>
 
-        {/* Free User Upgrade Banner */}
-        {!isPremium && (
-          <Card className="mb-8 border-2 border-amber-200 dark:border-amber-800 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
-                  <Lock size={24} className="text-white" />
+        {/* Free User Daily Limits Banner */}
+        {!isPremium && dailyLimits && (
+          <>
+            {/* Daily Usage Banner */}
+            <Card className="mb-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-3">
+                  <Target className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                      Daily Practice: {dailyLimits.usedToday} of {dailyLimits.dailyLimit} questions used today
+                    </h3>
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      {dailyLimits.remainingToday > 0 ? (
+                        <>{dailyLimits.remainingToday} questions remaining today. Upgrade for unlimited practice!</>
+                      ) : (
+                        <>Daily limit reached. Your limit resets tomorrow. Upgrade for unlimited practice!</>
+                      )}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
-                    Free Plan Limitations
-                    <Crown size={16} className="text-amber-500" />
-                  </h3>
-                  <p className="text-sm text-amber-700 dark:text-amber-400">
-                    You can practice up to {FREE_QUESTION_LIMIT} questions per category. Upgrade for unlimited access!
-                  </p>
-                </div>
+                <Link href="/pricing">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={Crown}
+                    className="shrink-0"
+                  >
+                    Upgrade
+                  </Button>
+                </Link>
               </div>
-              <Link href="/pricing">
-                <Button
-                  variant="primary"
-                  icon={Crown}
-                  className="bg-amber-500 hover:bg-amber-600 border-amber-500 hover:border-amber-600"
-                >
-                  Upgrade Now
-                </Button>
-              </Link>
-            </div>
-          </Card>
+            </Card>
+
+            {/* Limit Reached Warning */}
+            {dailyLimits.remainingToday === 0 && (
+              <Card className="mb-6 border-2 border-amber-200 dark:border-amber-800 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+                      <AlertCircle size={24} className="text-white" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                        Daily Limit Reached
+                        <Crown size={16} className="text-amber-500" />
+                      </h3>
+                      <p className="text-sm text-amber-700 dark:text-amber-400">
+                        You&apos;ve practiced {dailyLimits.dailyLimit} questions today. Upgrade for unlimited daily practice!
+                      </p>
+                    </div>
+                  </div>
+                  <Link href="/pricing">
+                    <Button
+                      variant="primary"
+                      icon={Crown}
+                      className="bg-amber-500 hover:bg-amber-600 border-amber-500 hover:border-amber-600"
+                    >
+                      Upgrade Now
+                    </Button>
+                  </Link>
+                </div>
+              </Card>
+            )}
+          </>
         )}
 
         {/* Categories Grid */}

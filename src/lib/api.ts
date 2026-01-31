@@ -95,6 +95,13 @@ export interface ProgressResponse {
   };
 }
 
+export interface PracticeLimitsResponse {
+  isPremium: boolean;
+  dailyLimit: number;
+  usedToday: number;
+  remainingToday: number;
+}
+
 // Token management
 export function getAccessToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -330,6 +337,10 @@ export const practiceApi = {
   async getProgressByCategories(): Promise<ApiResponse<ProgressResponse>> {
     return fetchApi<ApiResponse<ProgressResponse>>("/practice/progress/categories");
   },
+
+  async getLimits(): Promise<ApiResponse<PracticeLimitsResponse>> {
+    return fetchApi<ApiResponse<PracticeLimitsResponse>>("/practice/limits");
+  },
 };
 
 // ==================== MOCK EXAM TYPES ====================
@@ -446,6 +457,14 @@ export interface ExamHistoryResponse {
   passRate: number;
 }
 
+export interface MockExamLimitsResponse {
+  isPremium: boolean;
+  maxQuestionsPerExam: number;
+  maxExamsPerMonth: number;
+  examsUsedThisMonth: number;
+  remainingExamsThisMonth: number;
+}
+
 // Mock Exam API
 export const mockExamApi = {
   async createExam(params: CreateMockExamRequest): Promise<ApiResponse<MockExamData>> {
@@ -510,6 +529,10 @@ export const mockExamApi = {
       method: "POST",
     });
   },
+
+  async getLimits(): Promise<ApiResponse<MockExamLimitsResponse>> {
+    return fetchApi<ApiResponse<MockExamLimitsResponse>>("/mock-exams/limits");
+  },
 };
 
 // ==================== ANALYTICS TYPES ====================
@@ -571,6 +594,23 @@ export interface StreakResponse {
   current: number;
   longest: number;
   lastActivityDate: string;
+  canRepair?: boolean;
+  missedDays?: number;
+  repairCost?: number;
+}
+
+export interface ExplanationLimitsResponse {
+  isPremium: boolean;
+  dailyLimit: number;
+  viewedToday: number;
+  remainingToday: number;
+}
+
+export interface ExplanationViewResponse {
+  success: boolean;
+  viewedToday: number;
+  remainingToday: number;
+  limitReached: boolean;
 }
 
 export interface TimeTrackingCategory {
@@ -627,6 +667,22 @@ export const analyticsApi = {
 
   async getAll(): Promise<ApiResponse<AllAnalyticsResponse>> {
     return fetchApi<ApiResponse<AllAnalyticsResponse>>("/analytics");
+  },
+
+  async repairStreak(): Promise<ApiResponse<StreakResponse>> {
+    return fetchApi<ApiResponse<StreakResponse>>("/analytics/streak/repair", {
+      method: "POST",
+    });
+  },
+
+  async getExplanationLimits(): Promise<ApiResponse<ExplanationLimitsResponse>> {
+    return fetchApi<ApiResponse<ExplanationLimitsResponse>>("/analytics/explanation-limits");
+  },
+
+  async recordExplanationView(): Promise<ApiResponse<ExplanationViewResponse>> {
+    return fetchApi<ApiResponse<ExplanationViewResponse>>("/analytics/explanation-view", {
+      method: "POST",
+    });
   },
 };
 

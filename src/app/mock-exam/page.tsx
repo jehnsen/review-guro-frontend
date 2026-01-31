@@ -26,6 +26,7 @@ import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge } from "@/components/ui";
 import {
   mockExamApi,
+  analyticsApi,
   MockExamQuestion,
   MockExamResultData,
   DetailedExamResults,
@@ -47,11 +48,18 @@ const DEFAULT_CONFIG: ExamConfig = {
   passingScore: 80,
 };
 
+// Free tier limits
+const FREE_TIER_MAX_QUESTIONS = 20;
+const FREE_TIER_MAX_EXAMS_PER_MONTH = 3;
+
 // Preset options for exam configuration
 // Real CSE Professional: 170 questions, 170 minutes (3 hours 10 minutes)
 // Real CSE Sub-Professional: 165 questions, 165 minutes
-const QUESTION_OPTIONS = [20, 50, 100, 170];
+const QUESTION_OPTIONS_PREMIUM = [20, 50, 100, 170];
+const QUESTION_OPTIONS_FREE = [10, 15, 20];
 const TIME_OPTIONS = [
+  { questions: 10, time: 10 },
+  { questions: 15, time: 15 },
   { questions: 20, time: 20 },
   { questions: 50, time: 50 },
   { questions: 100, time: 100 },
@@ -71,7 +79,11 @@ export default function MockExamPage() {
   const [flaggedQuestions, setFlaggedQuestions] = useState<string[]>([]);
   const [timeRemaining, setTimeRemaining] = useState(DEFAULT_CONFIG.timeLimitMinutes * 60);
   const [showNavigator, setShowNavigator] = useState(false);
-  const [config, setConfig] = useState<ExamConfig>(DEFAULT_CONFIG);
+  const [config, setConfig] = useState<ExamConfig>(
+    isPremium
+      ? DEFAULT_CONFIG
+      : { totalQuestions: 20, timeLimitMinutes: 20, passingScore: 80 }
+  );
 
   // Results state
   const [examResults, setExamResults] = useState<MockExamResultData | null>(null);
@@ -83,10 +95,60 @@ export default function MockExamPage() {
   const [isLoadingResults, setIsLoadingResults] = useState(false);
   const [isCheckingActiveExam, setIsCheckingActiveExam] = useState(true);
 
+  // Free tier limits state
+  const [examsUsedThisMonth, setExamsUsedThisMonth] = useState(0);
+  const [isLoadingLimits, setIsLoadingLimits] = useState(!isPremium);
+
+  // Explanation view tracking for free users (taste test: first 3 per day are free)
+  const [explanationsViewedToday, setExplanationsViewedToday] = useState(0);
+  const [remainingExplanations, setRemainingExplanations] = useState(3);
+  const [unlockedExplanations, setUnlockedExplanations] = useState<Set<string>>(new Set());
+  const FREE_EXPLANATIONS_PER_DAY = 3;
+
+  // Fetch explanation limits from backend on mount
+  useEffect(() => {
+    async function fetchExplanationLimits() {
+      if (!isAuthenticated || authLoading || isPremium) return;
+
+      try {
+        const response = await analyticsApi.getExplanationLimits();
+        if (response.data) {
+          setExplanationsViewedToday(response.data.viewedToday);
+          setRemainingExplanations(response.data.remainingToday);
+        }
+      } catch (error) {
+        console.error("Error fetching explanation limits:", error);
+      }
+    }
+
+    fetchExplanationLimits();
+  }, [isAuthenticated, authLoading, isPremium]);
+
   // Ref to track if answer is being saved
   const savingAnswerRef = useRef(false);
 
   const currentQuestion = questions[currentQuestionIndex];
+
+  // Fetch mock exam limits for free users
+  useEffect(() => {
+    async function fetchLimits() {
+      if (!isAuthenticated || authLoading || isPremium) return;
+
+      setIsLoadingLimits(true);
+      try {
+        const response = await mockExamApi.getLimits();
+        if (response.data) {
+          setExamsUsedThisMonth(response.data.examsUsedThisMonth);
+        }
+      } catch (error) {
+        console.error("Error fetching mock exam limits:", error);
+      } finally {
+        setIsLoadingLimits(false);
+      }
+    }
+
+    fetchLimits();
+  }, [isAuthenticated, authLoading, isPremium]);
 
   // Check for in-progress exam on page load
   useEffect(() => {
@@ -189,6 +251,7 @@ export default function MockExamPage() {
   // Get time styling based on remaining time
   const getTimeStyles = () => {
     const percentage = (timeRemaining / (config.timeLimitMinutes * 60)) * 100;
+    // Red at last 10% - creates maximum urgency with pulse animation
     if (percentage <= 10) {
       return {
         container: "bg-rose-100 dark:bg-rose-900/50 border-2 border-rose-500 animate-pulse",
@@ -196,13 +259,15 @@ export default function MockExamPage() {
         icon: "text-rose-600 dark:text-rose-400"
       };
     }
-    if (percentage <= 25) {
+    // Orange at 50% or less - builds pressure
+    if (percentage <= 50) {
       return {
-        container: "bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-500",
-        text: "text-amber-700 dark:text-amber-300",
-        icon: "text-amber-600 dark:text-amber-400"
+        container: "bg-orange-100 dark:bg-orange-900/50 border-2 border-orange-500",
+        text: "text-orange-700 dark:text-orange-300",
+        icon: "text-orange-600 dark:text-orange-400"
       };
     }
+    // Blue above 50% - calm state
     return {
       container: "bg-blue-100 dark:bg-blue-900/50 border-2 border-blue-500",
       text: "text-blue-700 dark:text-blue-300",
@@ -326,8 +391,45 @@ export default function MockExamPage() {
     return currentQuestion ? answers[currentQuestion.id] : null;
   };
 
+  // Unlock explanation for a specific question
+  const unlockExplanation = async (questionId: string) => {
+    if (isPremium) return; // Premium users have all explanations unlocked
+
+    if (explanationsViewedToday < FREE_EXPLANATIONS_PER_DAY) {
+      try {
+        // Call backend API to record the view
+        const response = await analyticsApi.recordExplanationView();
+
+        if (response.data) {
+          // Update local state with backend response
+          setExplanationsViewedToday(response.data.viewedToday);
+          setRemainingExplanations(response.data.remainingToday);
+          setUnlockedExplanations((prev) => new Set([...prev, questionId]));
+        }
+      } catch (error) {
+        console.error("Error unlocking explanation:", error);
+        // Fallback to optimistic update if API fails
+        setUnlockedExplanations((prev) => new Set([...prev, questionId]));
+        setExplanationsViewedToday((prev) => prev + 1);
+        setRemainingExplanations((prev) => Math.max(0, prev - 1));
+      }
+    }
+  };
+
+  // Check if explanation is unlocked for a question
+  const isExplanationUnlocked = (questionId: string) => {
+    return isPremium || unlockedExplanations.has(questionId);
+  };
+
+  // Calculate remaining exams for free users
+  const remainingExams = FREE_TIER_MAX_EXAMS_PER_MONTH - examsUsedThisMonth;
+  const hasReachedMonthlyLimit = !isPremium && examsUsedThisMonth >= FREE_TIER_MAX_EXAMS_PER_MONTH;
+
+  // Get question options based on user tier
+  const questionOptions = isPremium ? QUESTION_OPTIONS_PREMIUM : QUESTION_OPTIONS_FREE;
+
   // Loading state
-  if (authLoading || isCheckingActiveExam) {
+  if (authLoading || isCheckingActiveExam || isLoadingLimits) {
     return (
       <DashboardLayout>
         <div className="flex items-center justify-center min-h-[400px]">
@@ -342,8 +444,8 @@ export default function MockExamPage() {
 
   // Setup Screen
   if (examState === "setup") {
-    // Premium Gate - Show upgrade prompt for free users
-    if (!isPremium) {
+    // Check if free user has reached monthly limit
+    if (hasReachedMonthlyLimit) {
       return (
         <DashboardLayout>
           <div className="max-w-2xl mx-auto">
@@ -355,34 +457,34 @@ export default function MockExamPage() {
                 </div>
               </div>
               <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                Mock Examination
+                Monthly Limit Reached
               </h1>
               <p className="text-slate-600 dark:text-slate-400">
-                Simulate real exam conditions with timed practice
+                You&apos;ve used all {FREE_TIER_MAX_EXAMS_PER_MONTH} free mock exams this month
               </p>
             </div>
 
-            {/* Premium Gate Card */}
+            {/* Upgrade Prompt Card */}
             <Card className="mb-6 border-2 border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
               <div className="text-center py-4">
                 <div className="w-16 h-16 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
                   <Crown size={32} className="text-white" />
                 </div>
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
-                  Premium Feature
+                  Upgrade to Continue
                 </h2>
                 <p className="text-slate-600 dark:text-slate-400 mb-6 max-w-md mx-auto">
-                  Mock Exams are available exclusively for Season Pass holders. Upgrade to access unlimited mock exams that simulate real Civil Service Exam conditions.
+                  Upgrade to Season Pass for unlimited mock exams with up to 170 questions.
                 </p>
 
-                {/* Features List */}
+                {/* Premium Features */}
                 <div className="grid grid-cols-2 gap-3 mb-6 text-left max-w-md mx-auto">
                   {[
                     "Unlimited mock exams",
-                    "Real exam timing (170 mins)",
+                    "Up to 170 questions",
+                    "Real exam timing",
                     "All 5 categories",
                     "Detailed results review",
-                    "Progress tracking",
                     "Performance analytics",
                   ].map((feature, index) => (
                     <div key={index} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
@@ -404,36 +506,26 @@ export default function MockExamPage() {
               </div>
             </Card>
 
-            {/* What you're missing */}
-            <Card className="bg-slate-50 dark:bg-slate-800/50">
-              <CardTitle className="mb-4">What Mock Exams Offer</CardTitle>
-              <ul className="space-y-3 text-sm text-slate-600 dark:text-slate-400">
-                <li className="flex items-start gap-3">
-                  <Clock size={18} className="text-blue-500 shrink-0 mt-0.5" />
-                  <span>
-                    <strong className="text-slate-900 dark:text-white">Timed Practice:</strong> Experience real exam pressure with countdown timers matching actual CSE duration.
-                  </span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <Target size={18} className="text-emerald-500 shrink-0 mt-0.5" />
-                  <span>
-                    <strong className="text-slate-900 dark:text-white">Passing Score Tracking:</strong> Know if you&apos;re ready with 80% passing score benchmarks.
-                  </span>
-                </li>
-                <li className="flex items-start gap-3">
-                  <BarChart3 size={18} className="text-purple-500 shrink-0 mt-0.5" />
-                  <span>
-                    <strong className="text-slate-900 dark:text-white">Detailed Review:</strong> Review each question with explanations after completing the exam.
-                  </span>
-                </li>
-              </ul>
+            {/* Info Card */}
+            <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+              <div className="flex gap-3">
+                <Clock className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" size={20} />
+                <div>
+                  <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                    Your limit will reset next month
+                  </h3>
+                  <p className="text-sm text-blue-800 dark:text-blue-200">
+                    Free users can take up to {FREE_TIER_MAX_EXAMS_PER_MONTH} mock exams per month with up to {FREE_TIER_MAX_QUESTIONS} questions each.
+                  </p>
+                </div>
+              </div>
             </Card>
           </div>
         </DashboardLayout>
       );
     }
 
-    // Premium users - show the full setup screen
+    // Setup screen for both free and premium users
     return (
       <DashboardLayout>
         <div className="max-w-2xl mx-auto">
@@ -449,16 +541,45 @@ export default function MockExamPage() {
             </p>
           </div>
 
+          {/* Free tier usage banner */}
+          {!isPremium && (
+            <Card className="mb-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+              <div className="flex items-center justify-between">
+                <div className="flex gap-3">
+                  <Target className="text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" size={20} />
+                  <div>
+                    <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-1">
+                      Free Tier: {remainingExams} of {FREE_TIER_MAX_EXAMS_PER_MONTH} exams remaining this month
+                    </h3>
+                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                      Up to {FREE_TIER_MAX_QUESTIONS} questions per exam. Upgrade for unlimited exams with up to 170 questions.
+                    </p>
+                  </div>
+                </div>
+                <Link href="/pricing">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    icon={Crown}
+                    className="shrink-0"
+                  >
+                    Upgrade
+                  </Button>
+                </Link>
+              </div>
+            </Card>
+          )}
+
           <Card className="mb-6">
             <CardTitle className="mb-4">Exam Configuration</CardTitle>
             <div className="space-y-6">
               {/* Question Count Selector */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-                  Number of Questions
+                  Number of Questions {!isPremium && `(Max ${FREE_TIER_MAX_QUESTIONS} for free users)`}
                 </label>
-                <div className="grid grid-cols-4 gap-2">
-                  {QUESTION_OPTIONS.map((num) => (
+                <div className={`grid gap-2 ${isPremium ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                  {questionOptions.map((num) => (
                     <button
                       key={num}
                       onClick={() => {
@@ -486,7 +607,7 @@ export default function MockExamPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-slate-600 dark:text-slate-400">Time Limit</span>
                   <span className="font-semibold text-slate-900 dark:text-white">
-                    {config.timeLimitMinutes} minutes
+                    {config.timeLimitMinutes} {config.timeLimitMinutes === 1 ? 'minute' : 'minutes'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -615,9 +736,42 @@ export default function MockExamPage() {
           <Card className="mb-6 text-center" padding="sm">
             <p className="text-sm text-slate-500 dark:text-slate-400">Time Spent</p>
             <p className="text-lg font-semibold text-slate-900 dark:text-white">
-              {examResults.timeSpentMinutes} minutes
+              {examResults.timeSpentMinutes} {examResults.timeSpentMinutes === 1 ? 'minute' : 'minutes'}
             </p>
           </Card>
+
+          {/* "Moment of Pain" Upsell Banner - Show when user fails and is not premium */}
+          {!examResults.passed && !isPremium && (
+            <Card className="mb-6 border-2 border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
+              <div className="flex items-start gap-4">
+                <div className="w-14 h-14 bg-gradient-to-br from-amber-400 to-amber-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+                  <BarChart3 size={28} className="text-white" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+                    Want to know exactly where you went wrong?
+                  </h3>
+                  <p className="text-sm text-slate-700 dark:text-slate-300 mb-4">
+                    Unlock detailed analytics to see your performance by category, identify weak areas, and get personalized study recommendations. Plus unlimited explanations to learn from every mistake.
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <Link href="/pricing">
+                      <Button
+                        size="sm"
+                        icon={Crown}
+                        className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
+                      >
+                        Upgrade for ₱299/month
+                      </Button>
+                    </Link>
+                    <Link href="/pricing" className="text-sm text-amber-700 dark:text-amber-300 hover:underline">
+                      See all features
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
 
           {/* Actions */}
           <div className="space-y-3">
@@ -747,11 +901,54 @@ export default function MockExamPage() {
                       </div>
 
                       {question.explanation && (
-                        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                          <p className="text-sm text-blue-800 dark:text-blue-200">
-                            <span className="font-medium">Explanation: </span>
-                            {question.explanation}
-                          </p>
+                        <div className="mt-4 relative">
+                          {!isExplanationUnlocked(question.questionId) && (
+                            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/80 to-white dark:via-slate-900/80 dark:to-slate-900 rounded-lg flex items-center justify-center z-10 backdrop-blur-sm">
+                              <div className="text-center">
+                                <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+                                  <Lock size={20} className="text-amber-600 dark:text-amber-400" />
+                                </div>
+                                {explanationsViewedToday < FREE_EXPLANATIONS_PER_DAY ? (
+                                  <>
+                                    <p className="text-sm font-medium text-slate-900 dark:text-white mb-2">
+                                      {FREE_EXPLANATIONS_PER_DAY - explanationsViewedToday} free explanations remaining today
+                                    </p>
+                                    <Button
+                                      size="sm"
+                                      onClick={() => unlockExplanation(question.questionId)}
+                                      className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                                    >
+                                      Unlock Explanation
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <p className="text-sm font-medium text-slate-900 dark:text-white mb-1">
+                                      Explanation Locked
+                                    </p>
+                                    <p className="text-xs text-slate-600 dark:text-slate-400 mb-3 max-w-xs">
+                                      You&apos;ve used all {FREE_EXPLANATIONS_PER_DAY} free explanations today. Upgrade for unlimited access.
+                                    </p>
+                                    <Link href="/pricing">
+                                      <Button
+                                        size="sm"
+                                        icon={Crown}
+                                        className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
+                                      >
+                                        Upgrade Now
+                                      </Button>
+                                    </Link>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                          <div className={`p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg ${!isExplanationUnlocked(question.questionId) ? 'blur-sm select-none' : ''}`}>
+                            <p className="text-sm text-blue-800 dark:text-blue-200">
+                              <span className="font-medium">Explanation: </span>
+                              {question.explanation}
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
