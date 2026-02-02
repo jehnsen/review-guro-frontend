@@ -17,7 +17,7 @@ import {
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
-import { practiceApi, questionsApi, profileApi, UserStats, CategoryProgress, categoryDisplayNames, Question } from "@/server/api";
+import { dashboardApi, UserStats, CategoryProgress, categoryDisplayNames, Question } from "@/server/api";
 
 type ApiCategory = Question["category"];
 
@@ -62,55 +62,32 @@ export default function DashboardPage() {
       if (!isAuthenticated) return;
 
       try {
-        // Fetch stats, progress, profile, and first question for each category in parallel
-        const [statsResponse, progressResponse, profileResponse, ...questionResponses] = await Promise.all([
-          practiceApi.getStats().catch(() => null),
-          practiceApi.getProgressByCategories().catch(() => null),
-          profileApi.getProfile().catch(() => null),
-          ...categories.map((category) =>
-            questionsApi.getQuestions({ category, limit: 1 }).catch(() => ({ data: [] }))
-          ),
-        ]);
+        // Use combined dashboard endpoint - single API call instead of 8 separate calls
+        const response = await dashboardApi.getDashboardData();
 
-        // Set exam date from profile
-        if (profileResponse?.data?.examDate) {
-          setExamDate(new Date(profileResponse.data.examDate));
-        }
+        if (response?.data) {
+          const { profile, stats, categoryProgress, categoryQuestions } = response.data;
 
-        if (statsResponse?.data) {
-          setStats(statsResponse.data);
-        }
+          console.log("Dashboard API Response:", response.data);
+          console.log("Category Progress:", categoryProgress);
 
-        if (progressResponse?.data?.categories) {
-          setCategoryProgress(progressResponse.data.categories);
-        }
-
-        // If we have overall stats from progress response, use those
-        if (progressResponse?.data?.overallStats) {
-          setStats(prev => prev || {
-            totalAttempts: progressResponse.data.overallStats.totalAttempts,
-            correctAnswers: progressResponse.data.overallStats.correctAnswers,
-            accuracy: progressResponse.data.overallStats.accuracy,
-          });
-        }
-
-        // Build category questions map
-        const questionsMap: Record<ApiCategory, string | null> = {
-          NUMERICAL_ABILITY: null,
-          VERBAL_ABILITY: null,
-          ANALYTICAL_ABILITY: null,
-          GENERAL_INFORMATION: null,
-          CLERICAL_ABILITY: null,
-        };
-
-        categories.forEach((category, index) => {
-          const questions = questionResponses[index]?.data;
-          if (questions && questions.length > 0) {
-            questionsMap[category] = questions[0].id;
+          // Set exam date from profile
+          if (profile?.examDate) {
+            setExamDate(new Date(profile.examDate));
           }
-        });
 
-        setCategoryQuestions(questionsMap);
+          // Set stats
+          setStats(stats);
+
+          // Set category progress
+          if (categoryProgress?.categories) {
+            console.log("Setting category progress:", categoryProgress.categories);
+            setCategoryProgress(categoryProgress.categories);
+          }
+
+          // Set category questions
+          setCategoryQuestions(categoryQuestions as Record<ApiCategory, string | null>);
+        }
       } catch (error) {
         console.error("Error fetching stats:", error);
       } finally {

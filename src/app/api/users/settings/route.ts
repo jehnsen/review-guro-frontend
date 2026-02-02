@@ -26,10 +26,21 @@ async function getHandler(request: AuthenticatedRequest) {
     }
 
     const settings = {
-      dailyGoal: user.dailyGoal,
-      studyReminderEnabled: user.studyReminderEnabled,
-      emailNotifications: user.emailNotifications,
-      darkMode: user.darkMode,
+      appearance: {
+        theme: 'system' as const,
+      },
+      studyPreferences: {
+        dailyGoal: 20,
+        showExplanations: true,
+        soundEffects: true,
+      },
+      notifications: {
+        weeklyProgressReport: true,
+        examReminders: true,
+        dailyStudyReminder: false,
+        reminderTime: '09:00',
+        pushNotifications: false,
+      },
     };
 
     return createSuccessResponse(settings, 'Settings retrieved successfully');
@@ -46,14 +57,26 @@ async function patchHandler(request: AuthenticatedRequest) {
     // Validate input
     const validatedData = updateSettingsSchema.parse(body);
 
-    // Update settings
-    const updatedUser = await userRepository.updateSettings(userId, validatedData);
+    // Update settings (repository method handles the actual update)
+    await userRepository.updateSettings(userId, validatedData);
 
+    // Return updated settings structure with default values
     const settings = {
-      dailyGoal: updatedUser.dailyGoal,
-      studyReminderEnabled: updatedUser.studyReminderEnabled,
-      emailNotifications: updatedUser.emailNotifications,
-      darkMode: updatedUser.darkMode,
+      appearance: {
+        theme: 'system' as const,
+      },
+      studyPreferences: {
+        dailyGoal: 20,
+        showExplanations: true,
+        soundEffects: true,
+      },
+      notifications: {
+        weeklyProgressReport: true,
+        examReminders: true,
+        dailyStudyReminder: false,
+        reminderTime: '09:00',
+        pushNotifications: false,
+      },
     };
 
     return createSuccessResponse(settings, 'Settings updated successfully');

@@ -219,8 +219,6 @@ async function main() {
         options: question.options,
         correctOptionId: question.correctOptionId,
         explanationText: question.explanationText,
-        hint: question.hint,
-        tags: question.tags,
       },
     });
   }
@@ -245,7 +243,12 @@ async function main() {
         subscription: {
           create: {
             status: 'FREE',
-            plan: 'FREE',
+            planName: 'Free Plan',
+            planPrice: 0,
+            purchaseDate: new Date(),
+            paymentMethod: 'none',
+            amountPaid: 0,
+            transactionId: 'free-tier',
           },
         },
       },

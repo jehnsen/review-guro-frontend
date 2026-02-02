@@ -37,14 +37,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check for existing session on mount
   useEffect(() => {
+    let isMounted = true;
+    let hasInitialized = false;
+
     const initAuth = async () => {
+      // Prevent duplicate calls (React StrictMode protection)
+      if (hasInitialized) return;
+      hasInitialized = true;
+
       const token = getAccessToken();
       const storedUser = getStoredUser();
 
       if (token && storedUser) {
         // Use stored user data immediately for faster initial render
-        setUser(storedUser);
-        setIsLoading(false);
+        if (isMounted) {
+          setUser(storedUser);
+          setIsLoading(false);
+        }
 
         // Verify token is still valid in the background (only if stored user is older than 5 minutes)
         const userAge = Date.now() - (storedUser.createdAt ? new Date(storedUser.createdAt).getTime() : 0);
@@ -53,25 +62,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (userAge > fiveMinutes) {
           try {
             const response = await authApi.getProfile();
-            if (response.success) {
-              setUser(response.data);
-            } else {
-              // Token invalid, clear storage
-              removeAccessToken();
-              setUser(null);
+            if (isMounted) {
+              if (response.success) {
+                setUser(response.data);
+              } else {
+                // Token invalid, clear storage
+                removeAccessToken();
+                setUser(null);
+              }
             }
           } catch {
             // Token expired or invalid
-            removeAccessToken();
-            setUser(null);
+            if (isMounted) {
+              removeAccessToken();
+              setUser(null);
+            }
           }
         }
       } else {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     initAuth();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {

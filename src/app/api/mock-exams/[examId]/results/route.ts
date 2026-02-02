@@ -16,7 +16,7 @@ async function handler(
     const { examId } = await params;
 
     // Get detailed exam results
-    const results = await mockExamService.getDetailedResults(userId, examId);
+    const results = await mockExamService.getResults(userId, examId);
 
     return createSuccessResponse(results, 'Exam results retrieved successfully');
   } catch (error) {

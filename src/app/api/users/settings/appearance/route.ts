@@ -25,7 +25,7 @@ async function patchHandler(request: AuthenticatedRequest) {
     });
 
     const settings = {
-      darkMode: updatedSettings.darkMode,
+      theme: updatedSettings.theme,
     };
 
     return createSuccessResponse(settings, 'Appearance updated successfully');

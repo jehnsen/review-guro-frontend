@@ -27,8 +27,8 @@ async function handler(request: AuthenticatedRequest) {
       userId,
       amount: config.payment.seasonPassPrice,
       description: 'ReviewGuro Season Pass',
-      successUrl: validatedData.successUrl || `${config.frontend.url}/payment/success`,
-      failedUrl: validatedData.cancelUrl || `${config.frontend.url}/payment/failed`,
+      successUrl: validatedData.successUrl || `${config.frontend.url}/checkout/success?ref=${encodeURIComponent('PAYMONGO_REF')}`,
+      failedUrl: validatedData.cancelUrl || `${config.frontend.url}/checkout/cancel`,
     });
 
     return createSuccessResponse(

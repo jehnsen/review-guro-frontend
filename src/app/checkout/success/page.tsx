@@ -17,31 +17,80 @@ export default function CheckoutSuccessPage() {
     // Verify payment and update user status
     const verifyPayment = async () => {
       try {
-        // Fetch updated user profile to confirm premium activation
+        // Get reference number from URL query params
+        const urlParams = new URLSearchParams(window.location.search);
+        const referenceNumber = urlParams.get('ref') || urlParams.get('reference');
+
+        // First, try to fetch updated user profile to confirm premium activation
         const response = await authApi.getProfile();
 
         if (response.success && response.data) {
           // Update stored user data
           setStoredUser(response.data);
-          setIsVerifying(false);
 
-          // Start countdown after verification
-          const timer = setInterval(() => {
-            setCountdown((prev) => {
-              if (prev <= 1) {
-                clearInterval(timer);
-                router.push("/dashboard");
-                return 0;
-              }
-              return prev - 1;
+          // If user is already premium, we're done
+          if (response.data.isPremium) {
+            setIsVerifying(false);
+
+            // Start countdown after verification
+            const timer = setInterval(() => {
+              setCountdown((prev) => {
+                if (prev <= 1) {
+                  clearInterval(timer);
+                  router.push("/dashboard");
+                  return 0;
+                }
+                return prev - 1;
+              });
+            }, 1000);
+
+            return () => clearInterval(timer);
+          }
+
+          // If user is not premium yet and we have a reference number,
+          // try manual verification (webhook might be delayed)
+          if (!response.data.isPremium && referenceNumber) {
+            console.log('User not premium yet, attempting manual verification...');
+
+            const verifyResponse = await fetch('/api/payments/paymongo/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ referenceNumber }),
             });
-          }, 1000);
 
-          return () => clearInterval(timer);
+            if (verifyResponse.ok) {
+              const verifyData = await verifyResponse.json();
+
+              // Fetch profile again to get updated status
+              const updatedResponse = await authApi.getProfile();
+              if (updatedResponse.success && updatedResponse.data) {
+                setStoredUser(updatedResponse.data);
+              }
+            }
+
+            setIsVerifying(false);
+
+            // Start countdown
+            const timer = setInterval(() => {
+              setCountdown((prev) => {
+                if (prev <= 1) {
+                  clearInterval(timer);
+                  router.push("/dashboard");
+                  return 0;
+                }
+                return prev - 1;
+              });
+            }, 1000);
+
+            return () => clearInterval(timer);
+          }
+
+          // No reference number, just proceed
+          setIsVerifying(false);
         }
       } catch (error) {
         console.error("Failed to verify payment:", error);
-        setVerificationError("Unable to verify payment status. Please refresh the page.");
+        setVerificationError("Unable to verify payment status. Please refresh the page or contact support.");
         setIsVerifying(false);
       }
     };

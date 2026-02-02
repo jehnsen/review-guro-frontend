@@ -18,7 +18,7 @@ export function QueryProvider({ children }: { children: ReactNode }) {
             // Don't refetch on window focus for better performance
             refetchOnWindowFocus: false,
             // Refetch on mount only if data is stale
-            refetchOnMount: "if-stale",
+            refetchOnMount: true,
           },
         },
       })

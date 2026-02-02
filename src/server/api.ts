@@ -236,6 +236,10 @@ function getErrorMessage(status: number): string {
   }
 }
 
+// Singleton to prevent duplicate profile fetches
+let profileFetchPromise: Promise<ApiResponse<AuthUser>> | null = null;
+let profileFetchTimestamp = 0;
+
 // Auth API
 export const authApi = {
   async register(email: string, password: string): Promise<ApiResponse<RegisterResponse>> {
@@ -267,11 +271,31 @@ export const authApi = {
   },
 
   async getProfile(): Promise<ApiResponse<AuthUser>> {
-    return fetchApi<ApiResponse<AuthUser>>("/auth/me");
+    const now = Date.now();
+
+    // If there's an ongoing fetch within the last 1 second, return the same promise
+    if (profileFetchPromise && (now - profileFetchTimestamp) < 1000) {
+      return profileFetchPromise;
+    }
+
+    // Create a new fetch promise
+    profileFetchTimestamp = now;
+    profileFetchPromise = fetchApi<ApiResponse<AuthUser>>("/auth/me")
+      .finally(() => {
+        // Clear the promise after it resolves/rejects
+        setTimeout(() => {
+          profileFetchPromise = null;
+        }, 1000);
+      });
+
+    return profileFetchPromise;
   },
 
   logout(): void {
     removeAccessToken();
+    // Clear any cached profile fetch
+    profileFetchPromise = null;
+    profileFetchTimestamp = 0;
   },
 };
 
@@ -690,6 +714,39 @@ export const analyticsApi = {
     return fetchApi<ApiResponse<ExplanationViewResponse>>("/analytics/explanation-view", {
       method: "POST",
     });
+  },
+};
+
+// ==================== DASHBOARD TYPES ====================
+
+export interface DashboardData {
+  profile: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    examDate: string | null;
+  } | null;
+  stats: {
+    totalAttempts: number;
+    correctAnswers: number;
+    accuracy: number;
+  };
+  categoryProgress: {
+    categories: CategoryProgress[];
+    overallStats: {
+      totalAttempts: number;
+      correctAnswers: number;
+      accuracy: number;
+    };
+  };
+  categoryQuestions: Record<Question["category"], string | null>;
+}
+
+// Dashboard API
+export const dashboardApi = {
+  async getDashboardData(): Promise<ApiResponse<DashboardData>> {
+    return fetchApi<ApiResponse<DashboardData>>("/dashboard/data");
   },
 };
 
