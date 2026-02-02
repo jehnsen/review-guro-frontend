@@ -31,7 +31,7 @@ import {
   MockExamResultData,
   DetailedExamResults,
   categoryDisplayNames,
-} from "@/lib/api";
+} from "@/server/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 type ExamState = "setup" | "in-progress" | "review" | "completed";

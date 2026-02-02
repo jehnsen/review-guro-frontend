@@ -26,7 +26,7 @@ import {
   ProgressResponse,
   PracticeLimitsResponse,
   categoryDisplayNames,
-} from "@/lib/api";
+} from "@/server/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 type ApiCategory = Question["category"];

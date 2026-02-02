@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { Button, Input, Card } from "@/components/ui";
 import { useAuth, GuestGuard } from "@/contexts/AuthContext";
-import { ApiError } from "@/lib/api";
+import { ApiError } from "@/server/api";
 
 export default function SignUpPage() {
   const router = useRouter();

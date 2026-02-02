@@ -30,7 +30,7 @@ import {
   Question,
   categoryDisplayNames,
   difficultyColors,
-} from "@/lib/api";
+} from "@/server/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 type AnswerState = "unanswered" | "correct" | "incorrect";
@@ -262,11 +262,13 @@ export default function PracticePage() {
         setAnswerState(previousAnswer.answerState);
         setCorrectOptionId(previousAnswer.correctOptionId);
         setIsFlagged(previousAnswer.isFlagged || false);
+        // Only show explanation if it's already unlocked or user is premium
+        const shouldShowExplanation = isPremium || unlockedExplanations.has(question.id);
         setTutorState({
           showHint: false,
           hintText: "",
-          showExplanation: true,
-          explanation: previousAnswer.explanation,
+          showExplanation: shouldShowExplanation,
+          explanation: shouldShowExplanation ? previousAnswer.explanation : "",
           messages: [],
           isTyping: false,
         });
@@ -326,34 +328,20 @@ export default function PracticePage() {
         const newAnswerState = response.data.isCorrect ? "correct" : "incorrect";
         setAnswerState(newAnswerState);
         setCorrectOptionId(response.data.correctOptionId);
+
+        // Store explanation but don't auto-show for free users
+        // The explanation card will render with blur/lock overlay
         setTutorState((prev) => ({
           ...prev,
           showExplanation: true,
           explanation: response.data.explanation,
         }));
 
-        // Auto-unlock explanation if user is premium or has quota remaining
-        if (isPremium || explanationsViewedToday < FREE_EXPLANATIONS_PER_DAY) {
-          if (!isPremium && !unlockedExplanations.has(question.id)) {
-            // Only increment if not already unlocked - call backend API
-            try {
-              const viewResponse = await analyticsApi.recordExplanationView();
-              if (viewResponse.data) {
-                setExplanationsViewedToday(viewResponse.data.viewedToday);
-                setRemainingExplanations(viewResponse.data.remainingToday);
-                setUnlockedExplanations((prev) => new Set([...prev, question.id]));
-              }
-            } catch (err) {
-              // Fallback to optimistic update
-              setUnlockedExplanations((prev) => new Set([...prev, question.id]));
-              setExplanationsViewedToday((prev) => prev + 1);
-              setRemainingExplanations((prev) => Math.max(0, prev - 1));
-            }
-          } else if (isPremium && !unlockedExplanations.has(question.id)) {
-            // For premium users, mark as unlocked without calling API
-            setUnlockedExplanations((prev) => new Set([...prev, question.id]));
-          }
+        // Auto-unlock explanation ONLY for premium users
+        if (isPremium && !unlockedExplanations.has(question.id)) {
+          setUnlockedExplanations((prev) => new Set([...prev, question.id]));
         }
+        // Free users must manually click "Unlock Explanation" button
 
         // Save the answer to ref and sessionStorage to retain state when navigating back
         answeredQuestionsRef.current[question.id] = {
@@ -383,24 +371,9 @@ export default function PracticePage() {
           explanation: "Unable to load explanation. Please try again.",
         }));
 
-        // Auto-unlock explanation for error case too
-        if (question && (isPremium || explanationsViewedToday < FREE_EXPLANATIONS_PER_DAY)) {
-          if (!isPremium && !unlockedExplanations.has(question.id)) {
-            try {
-              const viewResponse = await analyticsApi.recordExplanationView();
-              if (viewResponse.data) {
-                setExplanationsViewedToday(viewResponse.data.viewedToday);
-                setRemainingExplanations(viewResponse.data.remainingToday);
-                setUnlockedExplanations((prev) => new Set([...prev, question.id]));
-              }
-            } catch (err) {
-              setUnlockedExplanations((prev) => new Set([...prev, question.id]));
-              setExplanationsViewedToday((prev) => prev + 1);
-              setRemainingExplanations((prev) => Math.max(0, prev - 1));
-            }
-          } else if (isPremium && !unlockedExplanations.has(question.id)) {
-            setUnlockedExplanations((prev) => new Set([...prev, question.id]));
-          }
+        // Auto-unlock explanation ONLY for premium users in error case
+        if (question && isPremium && !unlockedExplanations.has(question.id)) {
+          setUnlockedExplanations((prev) => new Set([...prev, question.id]));
         }
 
         // Save the fallback answer state too
@@ -1012,7 +985,9 @@ export default function PracticePage() {
                     </h3>
                   </div>
                   <p className="text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-line">
-                    {tutorState.explanation}
+                    {isExplanationUnlocked(question.id)
+                      ? tutorState.explanation
+                      : "To find half of 2/3 cup, multiply by 1/2: (2/3) * (1/2) = 2/6 = 1/3 cup of sugar is needed. Understanding fraction operations is essential for solving recipe and measurement problems in the exam..."}
                   </p>
                 </div>
               </Card>

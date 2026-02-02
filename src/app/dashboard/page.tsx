@@ -17,7 +17,7 @@ import {
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
-import { practiceApi, questionsApi, profileApi, UserStats, CategoryProgress, categoryDisplayNames, Question } from "@/lib/api";
+import { practiceApi, questionsApi, profileApi, UserStats, CategoryProgress, categoryDisplayNames, Question } from "@/server/api";
 
 type ApiCategory = Question["category"];
 

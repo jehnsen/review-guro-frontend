@@ -1,0 +1,285 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// Enums
+// ============================================
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  FREE
+  SEASON_PASS
+  EXPIRED
+}
+
+enum QuestionCategory {
+  VERBAL_ABILITY
+  NUMERICAL_ABILITY
+  ANALYTICAL_ABILITY
+  GENERAL_INFORMATION
+  CLERICAL_ABILITY
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum ExamStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+// ============================================
+// User & Authentication
+// ============================================
+
+model User {
+  id        String  @id @default(uuid()) @db.Uuid
+  email     String  @unique
+  password  String  @map("password_hash")
+  role      UserRole @default(USER)
+  firstName String? @map("first_name")
+  lastName  String? @map("last_name")
+  avatarUrl String? @map("photo_url")
+
+  // Subscription
+  isPremium     Boolean   @default(false) @map("is_premium")
+  premiumExpiry DateTime? @map("premium_expiry")
+  examDate      DateTime? @map("exam_date")
+
+  // Streak tracking
+  currentStreak     Int       @default(0) @map("current_streak")
+  longestStreak     Int       @default(0) @map("longest_streak")
+  lastActivityDate  DateTime? @map("last_activity_date")
+  streakRepairedAt  DateTime? @map("streak_repaired_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  progress          UserProgress[]
+  mockExams         MockExamSession[]
+  sessions          UserSession[]
+  subscription      Subscription?
+  payments          Payment[]
+  analytics         DailyAnalytics[]
+  explanationViews  DailyExplanationView[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model UserSession {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  refreshToken String   @unique @map("refresh_token")
+  userAgent    String?  @map("user_agent")
+  ipAddress    String?  @map("ip_address")
+  expiresAt    DateTime @map("expires_at")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// Questions
+// ============================================
+
+model Question {
+  id              String           @id @default(uuid()) @db.Uuid
+  category        QuestionCategory
+  difficulty      Difficulty
+  questionText    String           @map("question_text") @db.Text
+  options         Json
+  correctOptionId String           @map("correct_option_id")
+  explanationText String?          @map("explanation_text") @db.Text
+  aiExplanation   String?          @map("ai_explanation") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  progress UserProgress[]
+
+  @@index([category])
+  @@index([difficulty])
+  @@index([category, difficulty])
+  @@map("questions")
+}
+
+// ============================================
+// User Progress & Practice
+// ============================================
+
+model UserProgress {
+  id               String  @id @default(uuid()) @db.Uuid
+  userId           String  @map("user_id") @db.Uuid
+  questionId       String  @map("question_id") @db.Uuid
+  selectedOptionId String  @map("selected_option_id")
+  isCorrect        Boolean @map("is_correct")
+  timeSpentSeconds Int     @map("time_spent_seconds")
+  isFlagged        Boolean @default(false) @map("is_flagged")
+  pointsEarned     Int     @default(0) @map("points_earned")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([userId])
+  @@index([questionId])
+  @@index([userId, createdAt])
+  @@index([userId, isCorrect])
+  @@map("user_progress")
+}
+
+// ============================================
+// Mock Exams
+// ============================================
+
+model MockExamSession {
+  id                   String     @id @default(uuid()) @db.Uuid
+  userId               String     @map("user_id") @db.Uuid
+  totalQuestions       Int        @map("total_questions")
+  timeLimitMinutes     Int        @map("time_limit_minutes")
+  passingScore         Int        @map("passing_score")
+  categories           String
+  difficulty           Difficulty?
+  status               ExamStatus @default(IN_PROGRESS)
+
+  startedAt            DateTime @default(now()) @map("started_at")
+  completedAt          DateTime? @map("completed_at")
+  timeRemainingSeconds Int?     @map("time_remaining_seconds")
+
+  questions        Json @map("questions")
+  answers          Json @map("answers")
+  flaggedQuestions Json @map("flagged_questions")
+
+  score                Int?     @map("score")
+  passed               Boolean? @map("passed")
+  correctAnswers       Int?     @map("correct_answers")
+  incorrectAnswers     Int?     @map("incorrect_answers")
+  unansweredQuestions  Int?     @map("unanswered_questions")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([userId, status])
+  @@index([userId, createdAt])
+  @@map("mock_exams")
+}
+
+// ============================================
+// Analytics
+// ============================================
+
+model DailyAnalytics {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @map("user_id") @db.Uuid
+  date           DateTime @db.Date
+  questionsCount Int      @default(0) @map("questions_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@map("daily_practice_usage")
+}
+
+model DailyExplanationView {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  date      DateTime @db.Date
+  viewCount Int      @default(0) @map("view_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date], name: "userId_date")
+  @@index([userId])
+  @@index([date])
+  @@map("daily_explanation_views")
+}
+
+// ============================================
+// Subscription & Payments
+// ============================================
+
+model Subscription {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @unique @map("user_id") @db.Uuid
+  planName       String    @map("plan_name")
+  planPrice      Decimal   @map("plan_price")
+  purchaseDate   DateTime  @map("purchase_date")
+  paymentMethod  String    @map("payment_method")
+  amountPaid     Decimal   @map("amount_paid")
+  transactionId  String    @map("transaction_id")
+  status         String
+  expiresAt      DateTime? @map("expires_at")
+  paymentProvider String?  @map("payment_provider")
+  referenceNumber String?  @map("reference_number")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @map("user_id") @db.Uuid
+  amount            Float
+  currency          String   @default("PHP")
+  provider          String
+  providerPaymentId String?  @unique @map("provider_payment_id")
+  status            String
+  description       String?
+  metadata          Json?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payment_verifications")
+}

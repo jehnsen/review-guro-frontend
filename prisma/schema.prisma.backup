@@ -1,0 +1,295 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Enums
+// ============================================
+
+enum UserRole {
+  FREE
+  PREMIUM
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  FREE
+  SEASON_PASS
+  EXPIRED
+}
+
+enum QuestionCategory {
+  VERBAL_ABILITY
+  NUMERICAL_ABILITY
+  ANALYTICAL_ABILITY
+  GENERAL_INFORMATION
+  CLERICAL_ABILITY
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum ExamStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+// ============================================
+// User & Authentication
+// ============================================
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  email     String   @unique
+  password  String   @map("password_hash")
+  role      UserRole @default(FREE)
+  firstName String?  @map("first_name")
+  lastName  String?  @map("last_name")
+  avatarUrl String?  @map("photo_url")
+
+  // Subscription
+  isPremium       Boolean            @default(false) @map("is_premium")
+  premiumExpiry   DateTime?          @map("premium_expiry")
+  subscriptionStatus SubscriptionStatus @default(FREE) @map("subscription_status")
+  examDate        DateTime?          @map("exam_date")
+
+  // Stats
+  totalAttempts       Int      @default(0) @map("total_attempts")
+  correctAnswers      Int      @default(0) @map("correct_answers")
+  totalStudyMinutes   Int      @default(0) @map("total_study_minutes")
+  currentStreak       Int      @default(0) @map("current_streak")
+  longestStreak       Int      @default(0) @map("longest_streak")
+  lastActivityDate    DateTime? @map("last_activity_date")
+  streakRepairCount   Int      @default(0) @map("streak_repair_count")
+
+  // Limits (for free users)
+  dailyPracticeCount  Int      @default(0) @map("daily_practice_count")
+  dailyResetDate      DateTime @default(now()) @map("daily_reset_date")
+  explanationCount    Int      @default(0) @map("explanation_count")
+  explanationResetDate DateTime @default(now()) @map("explanation_reset_date")
+
+  // Settings
+  dailyGoal           Int      @default(10) @map("daily_goal")
+  studyReminderEnabled Boolean @default(false) @map("study_reminder_enabled")
+  emailNotifications  Boolean  @default(true) @map("email_notifications")
+  darkMode            Boolean  @default(false) @map("dark_mode")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  progress      UserProgress[]
+  mockExams     MockExamSession[]
+  sessions      UserSession[]
+  subscription  Subscription?
+  payments      Payment[]
+  analytics     DailyAnalytics[]
+
+  @@index([email])
+  @@index([lastActivityDate])
+  @@map("users")
+}
+
+model UserSession {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ipAddress    String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// Questions
+// ============================================
+
+model Question {
+  id             String           @id @default(cuid())
+  category       QuestionCategory
+  difficulty     Difficulty
+  questionText   String           @db.Text
+  options        Json             // Array of QuestionOption objects
+  correctOptionId String
+  explanationText String?         @db.Text
+  aiExplanation  String?          @db.Text
+  hint           String?          @db.Text
+  tags           String[]         @default([])
+
+  // Metadata
+  timesAnswered  Int              @default(0)
+  timesCorrect   Int              @default(0)
+  averageTime    Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  progress UserProgress[]
+
+  @@index([category])
+  @@index([difficulty])
+  @@index([category, difficulty])
+  @@map("questions")
+}
+
+// ============================================
+// User Progress & Practice
+// ============================================
+
+model UserProgress {
+  id               String   @id @default(cuid())
+  userId           String
+  questionId       String
+  selectedOptionId String
+  isCorrect        Boolean
+  timeSpentSeconds Int
+  isFlagged        Boolean  @default(false)
+  pointsEarned     Int      @default(0)
+
+  createdAt DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([userId])
+  @@index([questionId])
+  @@index([userId, createdAt])
+  @@index([userId, isCorrect])
+  @@map("user_progress")
+}
+
+// ============================================
+// Mock Exams
+// ============================================
+
+model MockExamSession {
+  id                    String     @id @default(cuid())
+  userId                String
+  totalQuestions        Int
+  timeLimitMinutes      Int
+  passingScore          Int
+  categories            String     // JSON stringified array or "MIXED"
+  difficulty            Difficulty?
+  status                ExamStatus @default(IN_PROGRESS)
+
+  startedAt             DateTime   @default(now())
+  completedAt           DateTime?
+  timeRemainingSeconds  Int?
+
+  questions             Json       // Array of question IDs
+  answers               Json       // Object { questionId: selectedOptionId }
+  flaggedQuestions      Json       // Array of question IDs
+
+  score                 Int?
+  passed                Boolean?
+  correctAnswers        Int?
+  incorrectAnswers      Int?
+  unansweredQuestions   Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([userId, status])
+  @@index([userId, createdAt])
+  @@map("mock_exams")
+}
+
+// ============================================
+// Analytics
+// ============================================
+
+model DailyAnalytics {
+  id                  String   @id @default(cuid())
+  userId              String
+  date                DateTime @db.Date
+  questionsAnswered   Int      @default(0)
+  correctAnswers      Int      @default(0)
+  studyMinutes        Int      @default(0)
+  categoriesStudied   String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@map("daily_practice_usage")
+}
+
+// ============================================
+// Subscription & Payments
+// ============================================
+
+model Subscription {
+  id                String             @id @default(cuid())
+  userId            String             @unique
+  status            SubscriptionStatus @default(FREE)
+  plan              String             @default("FREE")
+  startedAt         DateTime?
+  expiresAt         DateTime?
+  autoRenew         Boolean            @default(false)
+
+  // Features
+  unlimitedPractice Boolean            @default(false)
+  aiTutoring        Boolean            @default(false)
+  mockExams         Boolean            @default(false)
+  analytics         Boolean            @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([expiresAt])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                String   @id @default(cuid())
+  userId            String
+  amount            Float
+  currency          String   @default("PHP")
+  provider          String   // "paymongo", "paypal", etc.
+  providerPaymentId String?  @unique
+  status            String   // "pending", "completed", "failed", "refunded"
+  description       String?
+  metadata          Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("payment_verifications")
+}

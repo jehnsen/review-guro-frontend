@@ -36,7 +36,7 @@ import {
   Subscription,
   ThemePreference,
   API_BASE_URL,
-} from "@/lib/api";
+} from "@/server/api";
 
 type SettingsTab = "profile" | "preferences" | "notifications" | "subscription" | "security";
 

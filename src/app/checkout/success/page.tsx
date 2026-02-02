@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { CheckCircle, Loader2, AlertCircle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card } from "@/components/ui";
-import { authApi, setStoredUser } from "@/lib/api";
+import { authApi, setStoredUser } from "@/server/api";
 
 export default function CheckoutSuccessPage() {
   const router = useRouter();

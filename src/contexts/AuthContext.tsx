@@ -16,7 +16,7 @@ import {
   getStoredUser,
   removeAccessToken,
   ApiError,
-} from "@/lib/api";
+} from "@/server/api";
 
 interface AuthContextType {
   user: AuthUser | null;

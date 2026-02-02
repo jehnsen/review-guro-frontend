@@ -1,6 +1,13 @@
 // API Client for ReviewGuro Backend
+// Since the API is now integrated into Next.js, we use relative URLs for client-side calls
+// and the full URL for server-side calls
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000/api";
+const isServerSide = typeof window === 'undefined';
+const baseUrl = isServerSide
+  ? (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000')
+  : ''; // Empty string for client-side = relative URLs
+
+export const API_BASE_URL = `${baseUrl}/api`;
 
 // Types for API responses
 export interface ApiResponse<T> {

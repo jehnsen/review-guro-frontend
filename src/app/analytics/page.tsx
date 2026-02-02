@@ -26,7 +26,7 @@ import {
   PerformanceByCategoryResponse,
   AIInsightsResponse,
   categoryDisplayNames,
-} from "@/lib/api";
+} from "@/server/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function AnalyticsPage() {

@@ -1,0 +1,111 @@
+/**
+ * Environment Configuration
+ * Centralized environment variable management with validation
+ * Next.js automatically loads .env files - no need for dotenv
+ */
+
+import { z } from 'zod';
+
+// Define the schema for environment variables
+const envSchema = z.object({
+  // Server
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  PORT: z.string().transform(Number).default('3000'),
+
+  // Database
+  DATABASE_URL: z.string().url('Invalid DATABASE_URL format'),
+
+  // Redis
+  REDIS_URL: z.string().default('redis://localhost:6379'),
+
+  // JWT
+  JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
+  JWT_EXPIRES_IN: z.string().default('7d'),
+
+  // OpenAI
+  OPENAI_API_KEY: z.string().optional(),
+
+  // Cache TTL (in seconds)
+  CACHE_TTL_QUESTIONS: z.string().transform(Number).default('3600'),
+  CACHE_TTL_EXPLANATIONS: z.string().transform(Number).default('86400'),
+
+  // PayMongo
+  PAYMONGO_SECRET_KEY: z.string(),
+  PAYMONGO_PUBLIC_KEY: z.string(),
+
+  // Payment
+  SEASON_PASS_PRICE: z.string().transform(Number).default('399'),
+  SEASON_PASS_CURRENCY: z.string().default('PHP'),
+
+  // Frontend
+  FRONTEND_URL: z.string().url('Invalid FRONTEND_URL format'),
+
+  // Free Tier Limits
+  FREE_TIER_PRACTICE_LIMIT_PER_DAY: z.string().transform(Number).default('15'),
+  FREE_TIER_MOCK_EXAM_QUESTIONS_LIMIT: z.string().transform(Number).default('20'),
+  FREE_TIER_MOCK_EXAMS_PER_MONTH: z.string().transform(Number).default('3'),
+});
+
+// Parse and validate environment variables
+const parseEnv = () => {
+  const parsed = envSchema.safeParse(process.env);
+
+  if (!parsed.success) {
+    console.error('❌ Invalid environment variables:');
+    parsed.error.issues.forEach((issue) => {
+      console.error(`  - ${issue.path.join('.')}: ${issue.message}`);
+    });
+    process.exit(1);
+  }
+
+  return parsed.data;
+};
+
+// Export validated environment configuration
+export const env = parseEnv();
+
+// Export typed configuration object
+export const config = {
+  server: {
+    nodeEnv: env.NODE_ENV,
+    port: env.PORT,
+    isDevelopment: env.NODE_ENV === 'development',
+    isProduction: env.NODE_ENV === 'production',
+    isTest: env.NODE_ENV === 'test',
+  },
+  database: {
+    url: env.DATABASE_URL,
+  },
+  redis: {
+    url: env.REDIS_URL,
+  },
+  jwt: {
+    secret: env.JWT_SECRET,
+    expiresIn: env.JWT_EXPIRES_IN,
+  },
+  openai: {
+    apiKey: env.OPENAI_API_KEY,
+  },
+  cache: {
+    questionsTTL: env.CACHE_TTL_QUESTIONS,
+    explanationsTTL: env.CACHE_TTL_EXPLANATIONS,
+  },
+  paymongo: {
+    secretKey: env.PAYMONGO_SECRET_KEY,
+    publicKey: env.PAYMONGO_PUBLIC_KEY,
+  },
+  payment: {
+    seasonPassPrice: env.SEASON_PASS_PRICE,
+    currency: env.SEASON_PASS_CURRENCY,
+  },
+  frontend: {
+    url: env.FRONTEND_URL,
+  },
+  freeTier: {
+    practiceLimitPerDay: env.FREE_TIER_PRACTICE_LIMIT_PER_DAY,
+    mockExamQuestionsLimit: env.FREE_TIER_MOCK_EXAM_QUESTIONS_LIMIT,
+    mockExamsPerMonth: env.FREE_TIER_MOCK_EXAMS_PER_MONTH,
+  },
+};
+
+export type Config = typeof config;

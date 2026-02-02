@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card } from "@/components/ui";
-import { paymentApi } from "@/lib/api";
+import { paymentApi } from "@/server/api";
 
 const planDetails = {
   season_pass: {
