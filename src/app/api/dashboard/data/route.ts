@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { prisma } from "@/server/config/database";
 import { withAuth, getAuthUser, AuthenticatedRequest } from "@/server/middlewares/withAuth";
+import { QuestionCategory } from "@prisma/client";
 
 // Combined dashboard data endpoint - returns all data needed for dashboard in one call
 export const GET = withAuth(async (request: AuthenticatedRequest) => {
@@ -30,7 +31,7 @@ export const GET = withAuth(async (request: AuthenticatedRequest) => {
       // Get progress by categories - fetch from existing internal logic
       (async () => {
         const categories = await Promise.all(
-          ['VERBAL_ABILITY', 'NUMERICAL_ABILITY', 'ANALYTICAL_ABILITY', 'GENERAL_INFORMATION', 'CLERICAL_ABILITY'].map(async (category) => {
+          (['VERBAL_ABILITY', 'NUMERICAL_ABILITY', 'ANALYTICAL_ABILITY', 'GENERAL_INFORMATION', 'CLERICAL_ABILITY'] as QuestionCategory[]).map(async (category) => {
             const totalQuestions = await prisma.question.count({ where: { category } });
 
             const userProgress = await prisma.userProgress.groupBy({
