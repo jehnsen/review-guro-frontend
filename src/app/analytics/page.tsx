@@ -46,58 +46,52 @@ export default function AnalyticsPage() {
 
       setIsLoading(true);
       try {
-        // Fetch all analytics data in parallel
-        const [
-          dashboardRes,
-          weeklyRes,
-          strengthsRes,
-          performanceRes,
-          insightsRes,
-        ] = await Promise.all([
-          analyticsApi.getDashboard().catch(() => null),
-          analyticsApi.getWeeklyActivity().catch(() => null),
-          analyticsApi.getStrengthsWeaknesses().catch(() => null),
-          analyticsApi.getPerformanceByCategory().catch(() => null),
-          analyticsApi.getAIInsights().catch(() => null),
-        ]);
+        // Use the combined endpoint to fetch all analytics data in a single API call
+        const response = await analyticsApi.getAll();
 
-        if (dashboardRes?.data) setDashboard(dashboardRes.data);
-        if (weeklyRes?.data) setWeeklyActivity(weeklyRes.data);
-        if (strengthsRes?.data) {
-          // Combine all categories and filter/sort properly
-          // Strengths: categories with accuracy >= 50%, sorted descending
-          // Weaknesses: categories with accuracy < 50%, sorted ascending
-          const allCategories = [
-            ...(strengthsRes.data.strengths || []),
-            ...(strengthsRes.data.weaknesses || []),
-          ];
+        if (response?.data) {
+          const data = response.data;
 
-          // Remove duplicates by category name
-          const uniqueCategories = allCategories.reduce((acc, curr) => {
-            if (!acc.find(item => item.category === curr.category)) {
-              acc.push(curr);
-            }
-            return acc;
-          }, [] as typeof allCategories);
+          // Set all analytics data from the combined response
+          if (data.dashboard) setDashboard(data.dashboard);
+          if (data.weeklyActivity) setWeeklyActivity(data.weeklyActivity);
 
-          const sortedData = {
-            strengths: uniqueCategories
-              .filter(c => c.accuracy >= 50)
-              .sort((a, b) => b.accuracy - a.accuracy),
-            weaknesses: uniqueCategories
-              .filter(c => c.accuracy < 50)
-              .sort((a, b) => a.accuracy - b.accuracy),
-          };
-          setStrengthsWeaknesses(sortedData);
+          if (data.strengthsWeaknesses) {
+            // Combine all categories and filter/sort properly
+            const allCategories = [
+              ...(data.strengthsWeaknesses.strengths || []),
+              ...(data.strengthsWeaknesses.weaknesses || []),
+            ];
+
+            // Remove duplicates by category name
+            const uniqueCategories = allCategories.reduce((acc, curr) => {
+              if (!acc.find(item => item.category === curr.category)) {
+                acc.push(curr);
+              }
+              return acc;
+            }, [] as typeof allCategories);
+
+            const sortedData = {
+              strengths: uniqueCategories
+                .filter(c => c.accuracy >= 50)
+                .sort((a, b) => b.accuracy - a.accuracy),
+              weaknesses: uniqueCategories
+                .filter(c => c.accuracy < 50)
+                .sort((a, b) => a.accuracy - b.accuracy),
+            };
+            setStrengthsWeaknesses(sortedData);
+          }
+
+          if (data.performanceByCategory) {
+            // Handle different response formats
+            const categories = Array.isArray(data.performanceByCategory)
+              ? data.performanceByCategory
+              : data.performanceByCategory.categories || [];
+            setPerformanceByCategory({ categories });
+          }
+
+          if (data.aiInsights) setAiInsights(data.aiInsights);
         }
-        if (performanceRes?.data) {
-          // Handle different response formats - API might return categories directly or nested
-          const categories = Array.isArray(performanceRes.data)
-            ? performanceRes.data
-            : performanceRes.data.categories || [];
-          setPerformanceByCategory({ categories });
-        }
-        if (insightsRes?.data) setAiInsights(insightsRes.data);
       } catch (error) {
         console.error("Error fetching analytics:", error);
       } finally {
