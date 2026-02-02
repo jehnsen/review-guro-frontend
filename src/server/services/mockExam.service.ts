@@ -196,7 +196,7 @@ export class MockExamService {
     if (typeof exam.flaggedQuestions === 'string') {
       flaggedQuestions = JSON.parse(exam.flaggedQuestions);
     } else if (Array.isArray(exam.flaggedQuestions)) {
-      flaggedQuestions = exam.flaggedQuestions;
+      flaggedQuestions = exam.flaggedQuestions as string[];
     } else {
       flaggedQuestions = [];
     }
@@ -355,7 +355,7 @@ export class MockExamService {
     if (typeof exam.flaggedQuestions === 'string') {
       flaggedQuestions = JSON.parse(exam.flaggedQuestions);
     } else if (Array.isArray(exam.flaggedQuestions)) {
-      flaggedQuestions = exam.flaggedQuestions;
+      flaggedQuestions = exam.flaggedQuestions as string[];
     } else {
       flaggedQuestions = [];
     }

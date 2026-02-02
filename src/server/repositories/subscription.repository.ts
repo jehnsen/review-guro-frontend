@@ -2,13 +2,13 @@
  * Subscription Repository
  * Data access layer for Subscription entity
  *
- * TODO: Most methods in this repository don't match the actual Prisma Subscription schema.
- * The schema only has: id, userId, status, plan, startedAt, expiresAt, autoRenew, and feature flags.
- * This repository needs to be refactored to match the schema.
+ * The Prisma Subscription schema has:
+ * - id, userId, planName, planPrice, purchaseDate, paymentMethod, amountPaid
+ * - transactionId, status, expiresAt, paymentProvider, referenceNumber
+ * - createdAt, updatedAt
  */
 
 import { prisma } from '../config/database';
-import { SubscriptionStatus } from '@prisma/client';
 
 class SubscriptionRepository {
   /**
@@ -62,24 +62,19 @@ class SubscriptionRepository {
     return prisma.subscription.upsert({
       where: { userId },
       update: {
-        status: SubscriptionStatus.SEASON_PASS,
-        plan: 'SEASON_PASS',
+        status: 'active',
         expiresAt,
-        unlimitedPractice: true,
-        aiTutoring: true,
-        mockExams: true,
-        analytics: true,
       },
       create: {
         userId,
-        status: SubscriptionStatus.SEASON_PASS,
-        plan: 'SEASON_PASS',
-        startedAt: new Date(),
+        planName: 'Season Pass',
+        planPrice: 0,
+        purchaseDate: new Date(),
+        paymentMethod: 'Code Redemption',
+        amountPaid: 0,
+        transactionId: `CODE-${Date.now()}`,
+        status: 'active',
         expiresAt,
-        unlimitedPractice: true,
-        aiTutoring: true,
-        mockExams: true,
-        analytics: true,
       },
     });
   }
