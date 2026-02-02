@@ -42,24 +42,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedUser = getStoredUser();
 
       if (token && storedUser) {
-        // Verify token is still valid
-        try {
-          const response = await authApi.getProfile();
-          if (response.success) {
-            setUser(response.data);
-          } else {
-            // Token invalid, clear storage
+        // Use stored user data immediately for faster initial render
+        setUser(storedUser);
+        setIsLoading(false);
+
+        // Verify token is still valid in the background (only if stored user is older than 5 minutes)
+        const userAge = Date.now() - (storedUser.createdAt ? new Date(storedUser.createdAt).getTime() : 0);
+        const fiveMinutes = 5 * 60 * 1000;
+
+        if (userAge > fiveMinutes) {
+          try {
+            const response = await authApi.getProfile();
+            if (response.success) {
+              setUser(response.data);
+            } else {
+              // Token invalid, clear storage
+              removeAccessToken();
+              setUser(null);
+            }
+          } catch {
+            // Token expired or invalid
             removeAccessToken();
             setUser(null);
           }
-        } catch {
-          // Token expired or invalid
-          removeAccessToken();
-          setUser(null);
         }
+      } else {
+        setIsLoading(false);
       }
-
-      setIsLoading(false);
     };
 
     initAuth();
