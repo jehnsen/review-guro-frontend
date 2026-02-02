@@ -27,6 +27,12 @@ class CacheService {
    * Called during application startup
    */
   async connect(): Promise<void> {
+    // Skip Redis connection if URL is not provided
+    if (!config.redis.url) {
+      console.log('⚠️  Redis URL not configured - running without cache');
+      return;
+    }
+
     try {
       this.client = new Redis(config.redis.url, {
         maxRetriesPerRequest: 3,

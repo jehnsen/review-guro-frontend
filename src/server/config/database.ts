@@ -18,6 +18,11 @@ const createPrismaClient = (): PrismaClient => {
     log: config.server.isDevelopment
       ? ['query', 'info', 'warn', 'error']
       : ['error'],
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
   });
 };
 

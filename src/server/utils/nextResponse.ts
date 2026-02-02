@@ -55,6 +55,15 @@ export function createErrorResponse(
   }
 
   // Generic error handling
+  // Log the full error in production for debugging
+  if (process.env.NODE_ENV === 'production') {
+    console.error('Unexpected API error:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+  }
+
   const message =
     process.env.NODE_ENV === 'production'
       ? 'An unexpected error occurred'

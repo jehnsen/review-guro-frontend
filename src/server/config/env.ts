@@ -13,14 +13,16 @@ const envSchema = z.object({
   PORT: z.string().transform(Number).default('3000'),
 
   // Database
-  DATABASE_URL: z.string().url('Invalid DATABASE_URL format'),
+  DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 
-  // Redis
-  REDIS_URL: z.string().default('redis://localhost:6379'),
+  // Redis (optional - app will work without it)
+  REDIS_URL: z.string().optional(),
 
   // JWT
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
-  JWT_EXPIRES_IN: z.string().default('7d'),
+  JWT_EXPIRES_IN: z.string().default('15m'),
+  REFRESH_TOKEN_SECRET: z.string().min(32, 'REFRESH_TOKEN_SECRET must be at least 32 characters'),
+  REFRESH_TOKEN_EXPIRES_IN: z.string().default('7d'),
 
   // OpenAI
   OPENAI_API_KEY: z.string().optional(),
@@ -29,16 +31,16 @@ const envSchema = z.object({
   CACHE_TTL_QUESTIONS: z.string().transform(Number).default('3600'),
   CACHE_TTL_EXPLANATIONS: z.string().transform(Number).default('86400'),
 
-  // PayMongo
-  PAYMONGO_SECRET_KEY: z.string(),
-  PAYMONGO_PUBLIC_KEY: z.string(),
+  // PayMongo (optional)
+  PAYMONGO_SECRET_KEY: z.string().optional(),
+  PAYMONGO_PUBLIC_KEY: z.string().optional(),
 
   // Payment
   SEASON_PASS_PRICE: z.string().transform(Number).default('399'),
   SEASON_PASS_CURRENCY: z.string().default('PHP'),
 
   // Frontend
-  FRONTEND_URL: z.string().url('Invalid FRONTEND_URL format'),
+  FRONTEND_URL: z.string().optional(),
 
   // Free Tier Limits
   FREE_TIER_PRACTICE_LIMIT_PER_DAY: z.string().transform(Number).default('15'),
@@ -82,6 +84,8 @@ export const config = {
   jwt: {
     secret: env.JWT_SECRET,
     expiresIn: env.JWT_EXPIRES_IN,
+    refreshTokenSecret: env.REFRESH_TOKEN_SECRET,
+    refreshTokenExpiresIn: env.REFRESH_TOKEN_EXPIRES_IN,
   },
   openai: {
     apiKey: env.OPENAI_API_KEY,

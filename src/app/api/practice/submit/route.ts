@@ -31,6 +31,13 @@ async function handler(request: AuthenticatedRequest) {
 
     return createSuccessResponse(result, 'Answer submitted successfully');
   } catch (error) {
+    // Log detailed error information for debugging
+    console.error('Submit answer error:', {
+      userId: request.user?.id,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+
     if (error instanceof z.ZodError) {
       return createErrorResponse(
         new Error(error.errors[0]?.message || 'Validation failed'),
