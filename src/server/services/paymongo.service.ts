@@ -42,7 +42,7 @@ class PayMongoService {
     this.client = axios.create({
       baseURL: this.baseURL,
       auth: {
-        username: config.paymongo.secretKey,
+        username: config.paymongo.secretKey || '',
         password: '', // PayMongo uses only username (secret key)
       },
       headers: {
@@ -188,7 +188,7 @@ class PayMongoService {
    * Frontend needs public key to initialize PayMongo.js
    */
   getPublicKey(): string {
-    return config.paymongo.publicKey;
+    return config.paymongo.publicKey || '';
   }
 
   /**

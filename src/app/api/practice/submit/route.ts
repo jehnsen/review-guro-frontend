@@ -33,7 +33,7 @@ async function handler(request: AuthenticatedRequest) {
   } catch (error) {
     // Log detailed error information for debugging
     console.error('Submit answer error:', {
-      userId: request.user?.id,
+      userId: request.user?.userId,
       error: error instanceof Error ? error.message : 'Unknown error',
       stack: error instanceof Error ? error.stack : undefined,
     });

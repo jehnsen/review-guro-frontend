@@ -40,11 +40,23 @@ class SubscriptionRepository {
 
   /**
    * Update subscription
-   * TODO: This method signature doesn't match the Prisma schema
    */
-  async update(_userId: string, _data: any) {
-    // Placeholder - needs to be updated to match actual Subscription model fields
-    throw new Error('Subscription update method not implemented - model mismatch');
+  async update(userId: string, data: {
+    plan?: string;
+    status?: string;
+    expiresAt?: Date | null;
+    unlimitedPractice?: boolean;
+    aiTutoring?: boolean;
+  }) {
+    return prisma.subscription.update({
+      where: { userId },
+      data: {
+        status: data.status || 'active',
+        expiresAt: data.expiresAt,
+        // Map the fields to match schema
+        planName: data.plan || 'Season Pass',
+      },
+    });
   }
 
   /**
