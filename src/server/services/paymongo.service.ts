@@ -21,6 +21,32 @@ interface PayMongoLink {
   };
 }
 
+interface PayMongoCheckoutSession {
+  id: string;
+  type: string;
+  attributes: {
+    billing: any;
+    checkout_url: string;
+    client_key: string;
+    description: string;
+    line_items: any[];
+    livemode: boolean;
+    merchant: string;
+    metadata: Record<string, string>;
+    payment_intent: any;
+    payment_method_types: string[];
+    reference_number: string;
+    send_email_receipt: boolean;
+    show_description: boolean;
+    show_line_items: boolean;
+    status: string;
+    success_url: string;
+    cancel_url: string;
+    created_at: number;
+    updated_at: number;
+  };
+}
+
 interface PayMongoPayment {
   id: string;
   type: string;
@@ -53,8 +79,9 @@ class PayMongoService {
   }
 
   /**
-   * Create a payment link (checkout session)
-   * This generates a hosted checkout page for the user
+   * Create a Checkout Session
+   * This generates a hosted checkout page with proper redirect support
+   * Docs: https://developers.paymongo.com/docs/checkout-api
    */
   async createPaymentLink(data: {
     userId: string;
@@ -78,10 +105,20 @@ class PayMongoService {
       const payload = {
         data: {
           attributes: {
-            amount: data.amount * 100, // Convert to centavos (₱399 → 39900)
-            currency: config.payment.currency,
+            send_email_receipt: true,
+            show_description: true,
+            show_line_items: true,
             description: data.description,
-            remarks: `Season Pass for User ${data.userId}`,
+            // Line items for the checkout
+            line_items: [
+              {
+                name: 'ReviewGuro Season Pass',
+                description: 'Unlimited access to all premium features',
+                amount: data.amount * 100, // Convert to centavos
+                currency: config.payment.currency,
+                quantity: 1,
+              },
+            ],
             // Payment method options
             payment_method_types: [
               'card',
@@ -90,10 +127,10 @@ class PayMongoService {
               'paymaya',
             ],
             reference_number: referenceNumber,
-            // Redirect URLs - include ref in success URL for verification
+            // Redirect URLs - Checkout Sessions API properly redirects!
             success_url: successUrlWithRef,
-            failed_url: data.failedUrl,
-            // Store metadata for webhook processing
+            cancel_url: data.failedUrl,
+            // Store metadata for webhook processing - this IS preserved in checkout sessions
             metadata: {
               userId: data.userId,
               referenceNumber,
@@ -103,24 +140,24 @@ class PayMongoService {
         },
       };
 
-      const response = await this.client.post<{ data: PayMongoLink }>(
-        '/links',
+      const response = await this.client.post<{ data: PayMongoCheckoutSession }>(
+        '/checkout_sessions',
         payload
       );
 
-      const link = response.data.data;
+      const session = response.data.data;
 
       return {
-        checkoutUrl: link.attributes.checkout_url,
-        referenceNumber: link.attributes.reference_number,
-        linkId: link.id,
+        checkoutUrl: session.attributes.checkout_url,
+        referenceNumber: session.attributes.reference_number || referenceNumber,
+        linkId: session.id,
       };
     } catch (error) {
       if (axios.isAxiosError(error)) {
         console.error('PayMongo API Error:', error.response?.data);
         throw new BadRequestError(
           error.response?.data?.errors?.[0]?.detail ||
-            'Failed to create payment link'
+            'Failed to create checkout session'
         );
       }
       throw error;

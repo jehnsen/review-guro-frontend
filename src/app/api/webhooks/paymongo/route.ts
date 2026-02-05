@@ -38,7 +38,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Handle payment events
-    if (eventType === 'link.payment.paid' || eventType === 'payment.paid') {
+    if (eventType === 'checkout_session.payment.paid') {
+      // Checkout Sessions API - this is the preferred method with proper redirects
+      await handleCheckoutSessionPaid(eventData);
+    } else if (eventType === 'link.payment.paid' || eventType === 'payment.paid') {
+      // Links API fallback (legacy)
       await handlePaymentPaid(eventData);
     } else if (eventType === 'payment.failed') {
       console.log('Payment failed event received:', eventData.id);
@@ -64,6 +68,151 @@ function extractUserIdFromRemarks(remarks: string | undefined): string | undefin
   if (!remarks) return undefined;
   const match = remarks.match(/Season Pass for User ([a-f0-9-]+)/i);
   return match ? match[1] : undefined;
+}
+
+/**
+ * Handle checkout_session.payment.paid events (Checkout Sessions API)
+ * This is the preferred method as it properly supports redirects
+ *
+ * PayMongo Checkout Session webhook structure:
+ * {
+ *   data: {
+ *     id: "evt_...",
+ *     type: "event",
+ *     attributes: {
+ *       type: "checkout_session.payment.paid",
+ *       data: {
+ *         id: "cs_...",
+ *         type: "checkout_session",
+ *         attributes: {
+ *           metadata: { userId, referenceNumber, productType },
+ *           payment_intent: { ... },
+ *           payments: [{ id: "pay_...", ... }],
+ *           ...
+ *         }
+ *       }
+ *     }
+ *   }
+ * }
+ */
+async function handleCheckoutSessionPaid(eventData: any) {
+  try {
+    const sessionData = eventData.attributes?.data;
+
+    if (!sessionData) {
+      console.error('Invalid checkout session event: missing data', {
+        eventId: eventData.id
+      });
+      return;
+    }
+
+    const sessionAttributes = sessionData.attributes;
+
+    if (!sessionAttributes) {
+      console.error('Invalid checkout session: missing attributes', {
+        sessionId: sessionData.id
+      });
+      return;
+    }
+
+    // Extract from metadata - Checkout Sessions properly preserve metadata!
+    const metadata = sessionAttributes.metadata || {};
+    const userId = metadata.userId;
+    const referenceNumber = metadata.referenceNumber || sessionAttributes.reference_number;
+
+    // Get payment details from the payments array or payment_intent
+    const payments = sessionAttributes.payments || [];
+    const firstPayment = payments[0];
+    const paymentId = firstPayment?.id || sessionData.id;
+    const amount = sessionAttributes.line_items?.[0]?.amount || 39900; // Default to season pass price
+    const paymentMethodUsed = firstPayment?.attributes?.source?.type || 'checkout_session';
+
+    console.log('Processing checkout session payment:', {
+      sessionId: sessionData.id,
+      paymentId,
+      userId,
+      referenceNumber,
+      amount,
+      metadata
+    });
+
+    if (!userId) {
+      console.error('Cannot process checkout session: userId not found in metadata', {
+        sessionId: sessionData.id,
+        metadata
+      });
+      return;
+    }
+
+    // Create payment record and update user premium status
+    await prisma.$transaction(async (tx) => {
+      // 1. Create payment record
+      await tx.payment.create({
+        data: {
+          userId,
+          amount: amount / 100,
+          currency: 'PHP',
+          provider: 'paymongo',
+          providerPaymentId: paymentId,
+          status: 'paid',
+          description: 'Season Pass Purchase',
+          metadata: {
+            referenceNumber,
+            paymentMethodUsed,
+            checkoutSessionId: sessionData.id,
+            webhookReceived: new Date().toISOString(),
+          },
+        },
+      });
+
+      // 2. Create or update subscription
+      await tx.subscription.upsert({
+        where: { userId },
+        create: {
+          userId,
+          planName: 'Season Pass',
+          planPrice: amount / 100,
+          purchaseDate: new Date(),
+          paymentMethod: paymentMethodUsed,
+          amountPaid: amount / 100,
+          transactionId: paymentId,
+          status: 'active',
+          expiresAt: null,
+          referenceNumber,
+          paymentProvider: 'paymongo',
+        },
+        update: {
+          planName: 'Season Pass',
+          planPrice: amount / 100,
+          purchaseDate: new Date(),
+          paymentMethod: paymentMethodUsed,
+          amountPaid: amount / 100,
+          transactionId: paymentId,
+          status: 'active',
+          expiresAt: null,
+          referenceNumber,
+          paymentProvider: 'paymongo',
+        },
+      });
+
+      // 3. Update user premium status
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          isPremium: true,
+          premiumExpiry: null,
+        },
+      });
+
+      console.log('✅ Checkout session payment processed for user:', userId);
+      console.log('✅ User isPremium set to TRUE');
+      console.log('✅ Session ID:', sessionData.id);
+      console.log('✅ Reference Number:', referenceNumber);
+    });
+  } catch (error) {
+    console.error('Error processing checkout session payment:', error);
+    throw error;
+  }
 }
 
 /**
@@ -179,8 +328,19 @@ async function handlePaymentPaid(eventData: any) {
     } else {
       // For payment.paid events, extract directly from payment attributes
       const metadata = nestedAttributes.metadata || {};
+
+      // Check if this payment originated from a link (has pm_reference_number in metadata)
+      // If so, skip processing here - the link.payment.paid event will handle it with full user info
+      if (metadata.pm_reference_number && nestedAttributes.origin === 'links') {
+        console.log('Skipping payment.paid event for link payment - will be handled by link.payment.paid', {
+          paymentId: nestedData.id,
+          pmReferenceNumber: metadata.pm_reference_number
+        });
+        return;
+      }
+
       userId = metadata.userId;
-      referenceNumber = metadata.referenceNumber || nestedAttributes.reference_number;
+      referenceNumber = metadata.referenceNumber || nestedAttributes.reference_number || nestedAttributes.external_reference_number;
       amount = nestedAttributes.amount || 0;
       paymentMethodUsed = nestedAttributes.source?.type || nestedAttributes.payment_method_used || 'unknown';
       paymentId = nestedData.id;
@@ -193,11 +353,19 @@ async function handlePaymentPaid(eventData: any) {
         amount,
         status,
         paymentMethodUsed,
-        metadata
+        metadata,
+        origin: nestedAttributes.origin
       });
     }
 
     if (!userId) {
+      // For link-originated payments without userId, try to look up via reference number
+      const pmRefNumber = nestedAttributes.metadata?.pm_reference_number || nestedAttributes.external_reference_number;
+      if (pmRefNumber) {
+        console.log('userId not found, but this may be a link payment. Reference:', pmRefNumber);
+        console.log('The link.payment.paid event should handle this payment.');
+      }
+
       console.error('Cannot process payment: userId not found', {
         paymentId,
         isLinkEvent,
