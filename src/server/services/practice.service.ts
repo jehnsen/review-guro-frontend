@@ -79,10 +79,8 @@ class PracticeService {
     // Calculate points earned
     const pointsEarned = isCorrect ? POINTS_BY_DIFFICULTY[question.difficulty] : 0;
 
-    // Record the attempt in UserProgress
-    await progressRepository.create({
-      user: { connect: { id: userId } },
-      question: { connect: { id: questionId } },
+    // Record the attempt in UserProgress (upsert to handle re-answering same question)
+    await progressRepository.upsert(userId, questionId, {
       selectedOptionId,
       isCorrect,
       timeSpentSeconds: dto.timeSpentSeconds || 0,

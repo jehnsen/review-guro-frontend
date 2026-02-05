@@ -3,16 +3,45 @@
  * Data access layer for UserProgress entity
  */
 
-import { UserProgress, Prisma } from '@prisma/client';
+import { UserProgress } from '@prisma/client';
 import { prisma } from '../config/database';
 
 class ProgressRepository {
   /**
    * Record a user's answer attempt
+   * Uses upsert to handle the unique constraint on (userId, questionId)
    */
-  async create(data: Prisma.UserProgressCreateInput): Promise<UserProgress> {
-    return prisma.userProgress.create({
-      data,
+  async upsert(
+    userId: string,
+    questionId: string,
+    data: {
+      selectedOptionId: string;
+      isCorrect: boolean;
+      timeSpentSeconds: number;
+      pointsEarned: number;
+    }
+  ): Promise<UserProgress> {
+    return prisma.userProgress.upsert({
+      where: {
+        userId_questionId: {
+          userId,
+          questionId,
+        },
+      },
+      update: {
+        selectedOptionId: data.selectedOptionId,
+        isCorrect: data.isCorrect,
+        timeSpentSeconds: data.timeSpentSeconds,
+        pointsEarned: data.pointsEarned,
+      },
+      create: {
+        userId,
+        questionId,
+        selectedOptionId: data.selectedOptionId,
+        isCorrect: data.isCorrect,
+        timeSpentSeconds: data.timeSpentSeconds,
+        pointsEarned: data.pointsEarned,
+      },
     });
   }
 

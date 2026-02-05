@@ -70,6 +70,11 @@ class PayMongoService {
     try {
       const referenceNumber = this.generateReferenceNumber();
 
+      // Build success URL with reference number for post-payment verification
+      const successUrlWithRef = data.successUrl.includes('?')
+        ? `${data.successUrl}&ref=${encodeURIComponent(referenceNumber)}`
+        : `${data.successUrl}?ref=${encodeURIComponent(referenceNumber)}`;
+
       const payload = {
         data: {
           attributes: {
@@ -85,8 +90,8 @@ class PayMongoService {
               'paymaya',
             ],
             reference_number: referenceNumber,
-            // Redirect URLs
-            success_url: data.successUrl,
+            // Redirect URLs - include ref in success URL for verification
+            success_url: successUrlWithRef,
             failed_url: data.failedUrl,
             // Store metadata for webhook processing
             metadata: {

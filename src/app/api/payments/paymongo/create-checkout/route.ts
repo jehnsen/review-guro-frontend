@@ -27,14 +27,22 @@ async function handler(request: AuthenticatedRequest) {
       userId,
       amount: config.payment.seasonPassPrice,
       description: 'ReviewGuro Season Pass',
-      successUrl: validatedData.successUrl || `${config.frontend.url}/checkout/success?ref=${encodeURIComponent('PAYMONGO_REF')}`,
+      // Include reference number in success URL for verification
+      // Note: We'll replace TEMP_REF after getting the actual reference from PayMongo
+      successUrl: validatedData.successUrl || `${config.frontend.url}/checkout/success`,
       failedUrl: validatedData.cancelUrl || `${config.frontend.url}/checkout/cancel`,
     });
+
+    // Build success URL with the actual reference number
+    const successUrlWithRef = validatedData.successUrl
+      ? `${validatedData.successUrl}?ref=${encodeURIComponent(result.referenceNumber)}`
+      : `${config.frontend.url}/checkout/success?ref=${encodeURIComponent(result.referenceNumber)}`;
 
     return createSuccessResponse(
       {
         checkoutUrl: result.checkoutUrl,
         referenceNumber: result.referenceNumber,
+        successUrl: successUrlWithRef,
       },
       'Checkout session created successfully'
     );
