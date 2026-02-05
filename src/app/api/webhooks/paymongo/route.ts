@@ -57,9 +57,21 @@ export async function POST(request: NextRequest) {
 }
 
 /**
+ * Extract userId from remarks field
+ * Format: "Season Pass for User {userId}"
+ */
+function extractUserIdFromRemarks(remarks: string | undefined): string | undefined {
+  if (!remarks) return undefined;
+  const match = remarks.match(/Season Pass for User ([a-f0-9-]+)/i);
+  return match ? match[1] : undefined;
+}
+
+/**
  * Handle payment.paid or link.payment.paid events
  *
- * PayMongo webhook structure:
+ * PayMongo webhook structures vary by event type:
+ *
+ * For link.payment.paid (payment links):
  * {
  *   data: {
  *     id: "evt_...",
@@ -67,12 +79,31 @@ export async function POST(request: NextRequest) {
  *     attributes: {
  *       type: "link.payment.paid",
  *       data: {
+ *         id: "link_...",
+ *         type: "link",
+ *         attributes: {
+ *           amount: 39900,
+ *           remarks: "Season Pass for User {userId}",
+ *           payments: [{ data: { id: "pay_...", attributes: {...} } }]
+ *         }
+ *       }
+ *     }
+ *   }
+ * }
+ *
+ * For payment.paid (direct payments):
+ * {
+ *   data: {
+ *     id: "evt_...",
+ *     type: "event",
+ *     attributes: {
+ *       type: "payment.paid",
+ *       data: {
  *         id: "pay_...",
  *         type: "payment",
  *         attributes: {
  *           amount: 39900,
  *           metadata: { userId, referenceNumber },
- *           payment_method_used: "gcash",
  *           ...
  *         }
  *       }
@@ -82,51 +113,96 @@ export async function POST(request: NextRequest) {
  */
 async function handlePaymentPaid(eventData: any) {
   try {
-    // Extract payment data from event
-    const paymentData = eventData.attributes?.data;
+    // Extract data from event
+    const nestedData = eventData.attributes?.data;
 
-    if (!paymentData) {
-      console.error('Invalid event structure: missing payment data', {
+    if (!nestedData) {
+      console.error('Invalid event structure: missing nested data', {
         eventId: eventData.id,
         hasAttributes: !!eventData.attributes
       });
       return;
     }
 
-    const paymentAttributes = paymentData.attributes;
+    const nestedAttributes = nestedData.attributes;
 
-    if (!paymentAttributes) {
-      console.error('Invalid payment data: missing attributes', {
-        paymentId: paymentData.id,
-        paymentType: paymentData.type
+    if (!nestedAttributes) {
+      console.error('Invalid data: missing attributes', {
+        dataId: nestedData.id,
+        dataType: nestedData.type
       });
       return;
     }
 
-    // Extract payment details
-    const metadata = paymentAttributes.metadata || {};
-    const userId = metadata.userId;
-    const referenceNumber = metadata.referenceNumber || paymentAttributes.reference_number;
-    const amount = paymentAttributes.amount || 0;
-    const paymentMethodUsed = paymentAttributes.source?.type || paymentAttributes.payment_method_used || 'unknown';
-    const paymentId = paymentData.id;
-    const status = paymentAttributes.status;
+    // Determine if this is a link event or direct payment event
+    const isLinkEvent = nestedData.type === 'link';
 
-    console.log('Processing payment:', {
-      paymentId,
-      userId,
-      referenceNumber,
-      amount,
-      status,
-      paymentMethodUsed,
-      metadata
-    });
+    let userId: string | undefined;
+    let referenceNumber: string | undefined;
+    let amount: number;
+    let paymentMethodUsed: string;
+    let paymentId: string;
+    let status: string;
+
+    if (isLinkEvent) {
+      // For link.payment.paid events, extract from link attributes and nested payment
+      const linkAttributes = nestedAttributes;
+      const paymentArray = linkAttributes.payments || [];
+      const firstPayment = paymentArray[0]?.data;
+      const paymentAttrs = firstPayment?.attributes || {};
+
+      // Try to get userId from:
+      // 1. Link's metadata (if PayMongo preserved it)
+      // 2. Remarks field (our fallback)
+      // 3. Payment's metadata
+      userId = linkAttributes.metadata?.userId
+        || extractUserIdFromRemarks(linkAttributes.remarks)
+        || paymentAttrs.metadata?.userId;
+
+      referenceNumber = linkAttributes.reference_number || paymentAttrs.external_reference_number;
+      amount = linkAttributes.amount || 0;
+      status = linkAttributes.status;
+      paymentMethodUsed = paymentAttrs.source?.type || 'unknown';
+      paymentId = firstPayment?.id || nestedData.id;
+
+      console.log('Processing link payment:', {
+        linkId: nestedData.id,
+        paymentId,
+        userId,
+        referenceNumber,
+        amount,
+        status,
+        paymentMethodUsed,
+        remarks: linkAttributes.remarks,
+        hasPayments: paymentArray.length
+      });
+    } else {
+      // For payment.paid events, extract directly from payment attributes
+      const metadata = nestedAttributes.metadata || {};
+      userId = metadata.userId;
+      referenceNumber = metadata.referenceNumber || nestedAttributes.reference_number;
+      amount = nestedAttributes.amount || 0;
+      paymentMethodUsed = nestedAttributes.source?.type || nestedAttributes.payment_method_used || 'unknown';
+      paymentId = nestedData.id;
+      status = nestedAttributes.status;
+
+      console.log('Processing direct payment:', {
+        paymentId,
+        userId,
+        referenceNumber,
+        amount,
+        status,
+        paymentMethodUsed,
+        metadata
+      });
+    }
 
     if (!userId) {
-      console.error('Cannot process payment: userId not found in metadata', {
+      console.error('Cannot process payment: userId not found', {
         paymentId,
-        metadata,
-        allAttributes: paymentAttributes
+        isLinkEvent,
+        remarks: isLinkEvent ? nestedAttributes.remarks : undefined,
+        metadata: nestedAttributes.metadata
       });
       return;
     }
