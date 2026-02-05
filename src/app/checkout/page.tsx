@@ -62,15 +62,55 @@ function CheckoutContent() {
       });
 
       if (response.success && response.data?.checkoutUrl) {
-        // Redirect to PayMongo checkout page
-        window.location.href = response.data.checkoutUrl;
+        const referenceNumber = response.data.referenceNumber;
+
+        // Open PayMongo in a new tab (Links API doesn't auto-redirect)
+        const paymentWindow = window.open(response.data.checkoutUrl, '_blank');
+
+        // Poll for payment completion
+        const pollInterval = setInterval(async () => {
+          try {
+            // Check if user's premium status has been updated
+            const profileResponse = await fetch('/api/auth/me', {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+              },
+            });
+
+            if (profileResponse.ok) {
+              const profileData = await profileResponse.json();
+              if (profileData.data?.isPremium) {
+                // Payment successful! Stop polling and redirect
+                clearInterval(pollInterval);
+                setIsProcessing(false);
+
+                // Close the payment window if still open
+                if (paymentWindow && !paymentWindow.closed) {
+                  paymentWindow.close();
+                }
+
+                // Redirect to success page
+                window.location.href = `${baseUrl}/checkout/success?ref=${encodeURIComponent(referenceNumber)}`;
+              }
+            }
+          } catch (pollError) {
+            console.error('Poll error:', pollError);
+          }
+        }, 3000); // Poll every 3 seconds
+
+        // Stop polling after 10 minutes (user probably abandoned)
+        setTimeout(() => {
+          clearInterval(pollInterval);
+          setIsProcessing(false);
+        }, 600000);
+
       } else {
         setError(response.message || "Failed to create checkout session. Please try again.");
+        setIsProcessing(false);
       }
     } catch (err) {
       console.error("Payment error:", err);
       setError("An error occurred while processing your payment. Please try again.");
-    } finally {
       setIsProcessing(false);
     }
   };
@@ -176,7 +216,7 @@ function CheckoutContent() {
               </h2>
 
               <p className="text-sm text-slate-600 dark:text-slate-400 mb-6">
-                You&apos;ll be redirected to PayMongo&apos;s secure checkout to complete your payment.
+                A new tab will open with PayMongo&apos;s secure checkout. Complete your payment there, and this page will automatically update.
               </p>
 
               {/* Supported Payment Methods */}
@@ -219,8 +259,14 @@ function CheckoutContent() {
                 isLoading={isProcessing}
                 className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
               >
-                {isProcessing ? "Redirecting to PayMongo..." : `Pay ₱${price?.toLocaleString()}`}
+                {isProcessing ? "Waiting for payment..." : `Pay ₱${price?.toLocaleString()}`}
               </Button>
+
+              {isProcessing && (
+                <p className="text-xs text-blue-600 dark:text-blue-400 text-center mt-2">
+                  Complete your payment in the new tab. This page will redirect automatically when done.
+                </p>
+              )}
 
               <p className="text-xs text-slate-500 dark:text-slate-400 text-center mt-4">
                 By completing this purchase, you agree to our Terms of Service and Privacy Policy.

@@ -79,9 +79,9 @@ class PayMongoService {
   }
 
   /**
-   * Create a Checkout Session
-   * This generates a hosted checkout page with proper redirect support
-   * Docs: https://developers.paymongo.com/docs/checkout-api
+   * Create a Payment Link
+   * Note: Links API doesn't auto-redirect, but it works with your PayMongo account
+   * The success page will handle verification via webhook or manual check
    */
   async createPaymentLink(data: {
     userId: string;
@@ -97,40 +97,21 @@ class PayMongoService {
     try {
       const referenceNumber = this.generateReferenceNumber();
 
-      // Build success URL with reference number for post-payment verification
-      const successUrlWithRef = data.successUrl.includes('?')
-        ? `${data.successUrl}&ref=${encodeURIComponent(referenceNumber)}`
-        : `${data.successUrl}?ref=${encodeURIComponent(referenceNumber)}`;
-
       const payload = {
         data: {
           attributes: {
-            send_email_receipt: true,
-            show_description: true,
-            show_line_items: true,
+            amount: data.amount * 100, // Convert to centavos (₱399 → 39900)
+            currency: config.payment.currency,
             description: data.description,
-            // Line items for the checkout
-            line_items: [
-              {
-                name: 'ReviewGuro Season Pass',
-                description: 'Unlimited access to all premium features',
-                amount: data.amount * 100, // Convert to centavos
-                currency: config.payment.currency,
-                quantity: 1,
-              },
-            ],
-            // Payment method options
+            // Store userId in remarks for webhook extraction
+            remarks: `Season Pass for User ${data.userId}`,
+            // Payment method options - only use methods enabled on your account
             payment_method_types: [
-              'card',
               'gcash',
-              'grab_pay',
-              'paymaya',
+              'card',
             ],
             reference_number: referenceNumber,
-            // Redirect URLs - Checkout Sessions API properly redirects!
-            success_url: successUrlWithRef,
-            cancel_url: data.failedUrl,
-            // Store metadata for webhook processing - this IS preserved in checkout sessions
+            // Store metadata (may not be preserved in webhook, but remarks will be)
             metadata: {
               userId: data.userId,
               referenceNumber,
@@ -140,24 +121,24 @@ class PayMongoService {
         },
       };
 
-      const response = await this.client.post<{ data: PayMongoCheckoutSession }>(
-        '/checkout_sessions',
+      const response = await this.client.post<{ data: PayMongoLink }>(
+        '/links',
         payload
       );
 
-      const session = response.data.data;
+      const link = response.data.data;
 
       return {
-        checkoutUrl: session.attributes.checkout_url,
-        referenceNumber: session.attributes.reference_number || referenceNumber,
-        linkId: session.id,
+        checkoutUrl: link.attributes.checkout_url,
+        referenceNumber: link.attributes.reference_number,
+        linkId: link.id,
       };
     } catch (error) {
       if (axios.isAxiosError(error)) {
         console.error('PayMongo API Error:', error.response?.data);
         throw new BadRequestError(
           error.response?.data?.errors?.[0]?.detail ||
-            'Failed to create checkout session'
+            'Failed to create payment link'
         );
       }
       throw error;

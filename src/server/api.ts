@@ -975,10 +975,9 @@ export interface CreateCheckoutRequest {
 }
 
 export interface CheckoutSessionResponse {
-  checkoutId: string;
   checkoutUrl: string;
-  status: "pending" | "active" | "expired" | "paid";
-  expiresAt: string;
+  referenceNumber: string;
+  successUrl?: string;
 }
 
 // Payment API (PayMongo)
