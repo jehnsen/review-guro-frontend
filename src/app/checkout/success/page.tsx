@@ -6,9 +6,11 @@ import { CheckCircle, Loader2, AlertCircle } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card } from "@/components/ui";
 import { authApi, setStoredUser } from "@/server/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function CheckoutSuccessPage() {
   const router = useRouter();
+  const { refreshUser } = useAuth();
   const [countdown, setCountdown] = useState(5);
   const [isVerifying, setIsVerifying] = useState(true);
   const [verificationError, setVerificationError] = useState<string | null>(null);
@@ -31,6 +33,9 @@ export default function CheckoutSuccessPage() {
           // If user is already premium, we're done
           if (response.data.isPremium) {
             setIsVerifying(false);
+
+            // Update global auth state so sidebar updates immediately
+            await refreshUser();
 
             // Start countdown after verification
             const timer = setInterval(() => {
@@ -59,12 +64,12 @@ export default function CheckoutSuccessPage() {
             });
 
             if (verifyResponse.ok) {
-              const verifyData = await verifyResponse.json();
-
               // Fetch profile again to get updated status
               const updatedResponse = await authApi.getProfile();
               if (updatedResponse.success && updatedResponse.data) {
                 setStoredUser(updatedResponse.data);
+                // Update global auth state so sidebar updates immediately
+                await refreshUser();
               }
             }
 

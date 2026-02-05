@@ -18,6 +18,7 @@ import {
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card } from "@/components/ui";
 import { paymentApi } from "@/server/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 const planDetails = {
   season_pass: {
@@ -40,6 +41,7 @@ const planDetails = {
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
+  const { refreshUser } = useAuth();
 
   const plan = searchParams.get("plan") || "season_pass";
   const billing = (searchParams.get("billing") || "monthly") as "monthly" | "yearly";
@@ -87,6 +89,9 @@ function CheckoutContent() {
                 clearInterval(pollInterval);
                 setIsProcessing(false);
                 setPaymentSuccess(true);
+
+                // Update the global auth state so sidebar/other components update immediately
+                await refreshUser();
 
                 // Redirect to success page after a short delay
                 setTimeout(() => {
