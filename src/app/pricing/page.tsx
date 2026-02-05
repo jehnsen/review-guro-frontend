@@ -85,8 +85,17 @@ export default function PricingPage() {
   const { user } = useAuth();
   const [billingPeriod, setBillingPeriod] = useState<BillingPeriod>("monthly");
 
+  // If user already has premium, show a different message
+  const userHasPremium = user?.isPremium === true;
+
   const handleSelectPlan = (planId: string) => {
     if (planId === "free") {
+      router.push("/dashboard");
+      return;
+    }
+
+    // Don't allow premium users to purchase again
+    if (userHasPremium) {
       router.push("/dashboard");
       return;
     }
@@ -104,6 +113,56 @@ export default function PricingPage() {
     const yearlyIfMonthly = plan.monthlyPrice * 12;
     return yearlyIfMonthly - plan.yearlyPrice;
   };
+
+  // If user has premium, show a thank you message instead
+  if (userHasPremium) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-2xl mx-auto py-12">
+          <Card className="p-8 text-center">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center mx-auto mb-6">
+              <Crown size={40} className="text-white" />
+            </div>
+            <Badge variant="warning" className="mb-4">
+              <Star size={12} className="mr-1 fill-current" />
+              Season Pass Active
+            </Badge>
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-4">
+              You&apos;re Already a Premium Member!
+            </h1>
+            <p className="text-lg text-slate-600 dark:text-slate-400 mb-8">
+              Thank you for being a Season Pass holder. You have full access to all premium features.
+            </p>
+            <div className="space-y-3 mb-8 text-left max-w-md mx-auto">
+              {[
+                "Unlimited practice questions",
+                "All categories access",
+                "Unlimited mock exams",
+                "AI Tutor assistance",
+                "Detailed explanations",
+                "Performance analytics",
+                "Ad-free experience",
+              ].map((feature, index) => (
+                <div key={index} className="flex items-center gap-3 text-slate-700 dark:text-slate-300">
+                  <div className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                    <Check size={12} />
+                  </div>
+                  <span>{feature}</span>
+                </div>
+              ))}
+            </div>
+            <Button
+              size="lg"
+              onClick={() => router.push("/dashboard")}
+              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
+            >
+              Go to Dashboard
+            </Button>
+          </Card>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>

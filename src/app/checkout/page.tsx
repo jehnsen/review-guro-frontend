@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -13,6 +13,7 @@ import {
   CreditCard,
   Wallet,
   Check,
+  CheckCircle,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card } from "@/components/ui";
@@ -38,11 +39,13 @@ const planDetails = {
 
 function CheckoutContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
 
   const plan = searchParams.get("plan") || "season_pass";
   const billing = (searchParams.get("billing") || "monthly") as "monthly" | "yearly";
 
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [error, setError] = useState("");
 
   const planInfo = planDetails[plan as keyof typeof planDetails];
@@ -65,7 +68,7 @@ function CheckoutContent() {
         const referenceNumber = response.data.referenceNumber;
 
         // Open PayMongo in a new tab (Links API doesn't auto-redirect)
-        const paymentWindow = window.open(response.data.checkoutUrl, '_blank');
+        window.open(response.data.checkoutUrl, '_blank');
 
         // Poll for payment completion
         const pollInterval = setInterval(async () => {
@@ -80,17 +83,15 @@ function CheckoutContent() {
             if (profileResponse.ok) {
               const profileData = await profileResponse.json();
               if (profileData.data?.isPremium) {
-                // Payment successful! Stop polling and redirect
+                // Payment successful! Stop polling
                 clearInterval(pollInterval);
                 setIsProcessing(false);
+                setPaymentSuccess(true);
 
-                // Close the payment window if still open
-                if (paymentWindow && !paymentWindow.closed) {
-                  paymentWindow.close();
-                }
-
-                // Redirect to success page
-                window.location.href = `${baseUrl}/checkout/success?ref=${encodeURIComponent(referenceNumber)}`;
+                // Redirect to success page after a short delay
+                setTimeout(() => {
+                  router.push(`/checkout/success?ref=${encodeURIComponent(referenceNumber)}`);
+                }, 2000);
               }
             }
           } catch (pollError) {
@@ -128,6 +129,38 @@ function CheckoutContent() {
           <Link href="/pricing">
             <Button>View Plans</Button>
           </Link>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
+  // Show success message when payment is detected
+  if (paymentSuccess) {
+    return (
+      <DashboardLayout>
+        <div className="max-w-2xl mx-auto py-12">
+          <Card className="p-8 text-center">
+            <div className="w-20 h-20 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-6">
+              <CheckCircle size={48} className="text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-3">
+              Payment Successful!
+            </h1>
+            <p className="text-lg text-slate-600 dark:text-slate-400 mb-6">
+              Your Season Pass has been activated. You can now close the payment tab.
+            </p>
+            <div className="flex items-center justify-center gap-2 text-slate-500 dark:text-slate-400 mb-6">
+              <Loader2 size={16} className="animate-spin" />
+              <p className="text-sm">Redirecting to success page...</p>
+            </div>
+            <Button
+              size="lg"
+              onClick={() => router.push("/dashboard")}
+              className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
+            >
+              Go to Dashboard Now
+            </Button>
+          </Card>
         </div>
       </DashboardLayout>
     );
