@@ -76,7 +76,7 @@ function CheckoutContent() {
             // Check if user's premium status has been updated
             const profileResponse = await fetch('/api/auth/me', {
               headers: {
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                'Authorization': `Bearer ${localStorage.getItem('reviewguro_token')}`,
               },
             });
 
