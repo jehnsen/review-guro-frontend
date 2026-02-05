@@ -12,27 +12,37 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    console.log('PayMongo webhook received:', {
-      type: body.data?.type,
-      id: body.data?.id,
-      attributes: body.data?.attributes
-    });
+    // Log the complete raw payload for debugging
+    console.log('PayMongo webhook RAW payload:', JSON.stringify(body, null, 2));
 
-    // Extract webhook data
-    const webhookData = body.data;
+    // PayMongo webhook structure:
+    // { data: { id: "evt_...", type: "event", attributes: { type: "link.payment.paid", data: {...} } } }
 
-    if (!webhookData) {
-      console.error('Invalid webhook payload: missing data field');
+    const eventData = body.data;
+    if (!eventData) {
+      console.error('Invalid webhook: missing data field');
       return createSuccessResponse(null, 'Webhook received');
     }
 
-    // Handle different webhook event types
-    const eventType = webhookData.attributes?.type || webhookData.type;
+    const eventType = eventData.attributes?.type;
 
-    console.log('Webhook event type:', eventType);
+    console.log('Webhook event received:', {
+      eventId: eventData.id,
+      eventType: eventType,
+      hasNestedData: !!eventData.attributes?.data
+    });
 
-    if (eventType === 'link.payment.paid' || eventType === 'payment.paid' || eventType === 'checkout_session.payment.paid') {
-      await handlePaymentPaid(webhookData);
+    if (!eventType) {
+      console.error('Cannot determine event type from webhook payload');
+      return createSuccessResponse(null, 'Webhook received');
+    }
+
+    // Handle payment events
+    if (eventType === 'link.payment.paid' || eventType === 'payment.paid') {
+      await handlePaymentPaid(eventData);
+    } else if (eventType === 'payment.failed') {
+      console.log('Payment failed event received:', eventData.id);
+      // TODO: Handle payment failure if needed
     } else {
       console.log('Unhandled webhook event type:', eventType);
     }
@@ -47,30 +57,82 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Handle payment.paid or link.payment.paid or checkout_session.payment.paid events
+ * Handle payment.paid or link.payment.paid events
+ *
+ * PayMongo webhook structure:
+ * {
+ *   data: {
+ *     id: "evt_...",
+ *     type: "event",
+ *     attributes: {
+ *       type: "link.payment.paid",
+ *       data: {
+ *         id: "pay_...",
+ *         type: "payment",
+ *         attributes: {
+ *           amount: 39900,
+ *           metadata: { userId, referenceNumber },
+ *           payment_method_used: "gcash",
+ *           ...
+ *         }
+ *       }
+ *     }
+ *   }
+ * }
  */
-async function handlePaymentPaid(webhookData: any) {
+async function handlePaymentPaid(eventData: any) {
   try {
-    const attributes = webhookData.attributes;
-    const paymentData = attributes?.data || webhookData;
+    // Extract payment data from event
+    const paymentData = eventData.attributes?.data;
 
-    // Extract metadata
-    const metadata = paymentData.attributes?.metadata || attributes?.metadata || {};
+    if (!paymentData) {
+      console.error('Invalid event structure: missing payment data', {
+        eventId: eventData.id,
+        hasAttributes: !!eventData.attributes
+      });
+      return;
+    }
+
+    const paymentAttributes = paymentData.attributes;
+
+    if (!paymentAttributes) {
+      console.error('Invalid payment data: missing attributes', {
+        paymentId: paymentData.id,
+        paymentType: paymentData.type
+      });
+      return;
+    }
+
+    // Extract payment details
+    const metadata = paymentAttributes.metadata || {};
     const userId = metadata.userId;
-    const referenceNumber = metadata.referenceNumber || paymentData.attributes?.reference_number;
-    const amount = paymentData.attributes?.amount || 0;
-    const paymentMethodUsed = paymentData.attributes?.payment_method_used || 'unknown';
+    const referenceNumber = metadata.referenceNumber || paymentAttributes.reference_number;
+    const amount = paymentAttributes.amount || 0;
+    const paymentMethodUsed = paymentAttributes.source?.type || paymentAttributes.payment_method_used || 'unknown';
+    const paymentId = paymentData.id;
+    const status = paymentAttributes.status;
 
     console.log('Processing payment:', {
+      paymentId,
       userId,
       referenceNumber,
       amount,
+      status,
       paymentMethodUsed,
       metadata
     });
 
     if (!userId) {
-      console.error('Cannot process payment: userId not found in metadata', metadata);
+      console.error('Cannot process payment: userId not found in metadata', {
+        paymentId,
+        metadata,
+        allAttributes: paymentAttributes
+      });
+      return;
+    }
+
+    if (status !== 'paid') {
+      console.warn('Payment status is not "paid":', status);
       return;
     }
 
@@ -83,7 +145,7 @@ async function handlePaymentPaid(webhookData: any) {
           amount: amount / 100, // Convert centavos to pesos
           currency: 'PHP',
           provider: 'paymongo',
-          providerPaymentId: paymentData.id,
+          providerPaymentId: paymentId,
           status: 'paid',
           description: 'Season Pass Purchase',
           metadata: {
@@ -104,7 +166,7 @@ async function handlePaymentPaid(webhookData: any) {
           purchaseDate: new Date(),
           paymentMethod: paymentMethodUsed,
           amountPaid: amount / 100,
-          transactionId: paymentData.id,
+          transactionId: paymentId,
           status: 'active',
           expiresAt: null, // Season pass doesn't expire
           referenceNumber,
@@ -116,7 +178,7 @@ async function handlePaymentPaid(webhookData: any) {
           purchaseDate: new Date(),
           paymentMethod: paymentMethodUsed,
           amountPaid: amount / 100,
-          transactionId: paymentData.id,
+          transactionId: paymentId,
           status: 'active',
           expiresAt: null,
           referenceNumber,
@@ -135,6 +197,8 @@ async function handlePaymentPaid(webhookData: any) {
 
       console.log('✅ Payment processed successfully for user:', userId);
       console.log('✅ User isPremium set to TRUE');
+      console.log('✅ Payment ID:', paymentId);
+      console.log('✅ Reference Number:', referenceNumber);
     });
   } catch (error) {
     console.error('Error processing payment:', error);
