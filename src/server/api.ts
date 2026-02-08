@@ -22,6 +22,7 @@ export interface AuthUser {
   role: "USER" | "ADMIN";
   isPremium: boolean;
   premiumExpiry: string | null;
+  emailVerified: boolean;
   createdAt: string;
 }
 
@@ -1000,6 +1001,33 @@ export const paymentApi = {
     return fetchApi<ApiResponse<CheckoutSessionResponse>>("/payments/paymongo/create-checkout", {
       method: "POST",
       body: JSON.stringify(data),
+    });
+  },
+};
+
+// Generic API helper for simple requests
+export const api = {
+  async get<T>(endpoint: string): Promise<T> {
+    return fetchApi<T>(endpoint);
+  },
+
+  async post<T>(endpoint: string, data?: unknown): Promise<T> {
+    return fetchApi<T>(endpoint, {
+      method: "POST",
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  },
+
+  async patch<T>(endpoint: string, data?: unknown): Promise<T> {
+    return fetchApi<T>(endpoint, {
+      method: "PATCH",
+      body: data ? JSON.stringify(data) : undefined,
+    });
+  },
+
+  async delete<T>(endpoint: string): Promise<T> {
+    return fetchApi<T>(endpoint, {
+      method: "DELETE",
     });
   },
 };

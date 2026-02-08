@@ -69,8 +69,8 @@ export default function SignUpPage() {
 
     try {
       await register(formData.email, formData.password);
-      // Use replace to prevent going back to sign-up after registration
-      router.replace("/dashboard");
+      // Redirect to check-email page after successful registration
+      router.replace("/check-email");
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.status === 409) {

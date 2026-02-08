@@ -78,8 +78,52 @@ class UserRepository {
       isPremium: user.isPremium,
       premiumExpiry: user.premiumExpiry,
       examDate: user.examDate,
+      emailVerified: user.emailVerified,
       createdAt: user.createdAt,
     };
+  }
+
+  /**
+   * Find user by email verification token
+   */
+  async findByVerificationToken(token: string): Promise<User | null> {
+    return prisma.user.findUnique({
+      where: { emailVerificationToken: token },
+    });
+  }
+
+  /**
+   * Update email verification status
+   */
+  async updateVerificationStatus(
+    userId: string,
+    verified: boolean
+  ): Promise<User> {
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerified: verified,
+        emailVerificationToken: null,
+        emailVerificationExpiry: null,
+      },
+    });
+  }
+
+  /**
+   * Update email verification token
+   */
+  async updateVerificationToken(
+    userId: string,
+    token: string,
+    expiry: Date
+  ): Promise<User> {
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        emailVerificationToken: token,
+        emailVerificationExpiry: expiry,
+      },
+    });
   }
 
   /**
@@ -140,31 +184,92 @@ class UserRepository {
   }
 
   /**
+   * Find user by password reset token
+   */
+  async findByPasswordResetToken(token: string): Promise<User | null> {
+    return prisma.user.findUnique({
+      where: { passwordResetToken: token },
+    });
+  }
+
+  /**
+   * Update password reset token
+   */
+  async updatePasswordResetToken(
+    userId: string,
+    token: string | null,
+    expiry: Date | null
+  ): Promise<User> {
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordResetToken: token,
+        passwordResetExpiry: expiry,
+      },
+    });
+  }
+
+  /**
+   * Clear password reset token (after successful reset)
+   */
+  async clearPasswordResetToken(userId: string): Promise<User> {
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordResetToken: null,
+        passwordResetExpiry: null,
+      },
+    });
+  }
+
+  /**
    * Get or create user settings
    */
   async getSettings(userId: string) {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-      },
+    // Try to find existing settings
+    let settings = await prisma.userSettings.findUnique({
+      where: { userId },
     });
 
-    // Return default settings
-    // Note: Settings are stored in user_settings table in the database
-    // This is a placeholder that returns defaults
+    // If no settings exist, create default settings
+    if (!settings) {
+      settings = await prisma.userSettings.create({
+        data: {
+          userId,
+          theme: 'system',
+          dailyGoal: 20,
+          showExplanations: true,
+          soundEffects: true,
+          weeklyProgressReport: true,
+          examReminders: true,
+          dailyStudyReminder: false,
+          reminderTime: '09:00',
+          pushNotifications: false,
+        },
+      });
+    }
+
     return {
-      dailyGoal: 10,
-      studyReminderEnabled: false,
-      emailNotifications: true,
-      darkMode: false,
+      appearance: {
+        theme: settings.theme as 'light' | 'dark' | 'system',
+      },
+      studyPreferences: {
+        dailyGoal: settings.dailyGoal,
+        showExplanations: settings.showExplanations,
+        soundEffects: settings.soundEffects,
+      },
+      notifications: {
+        weeklyProgressReport: settings.weeklyProgressReport,
+        examReminders: settings.examReminders,
+        dailyStudyReminder: settings.dailyStudyReminder,
+        reminderTime: settings.reminderTime,
+        pushNotifications: settings.pushNotifications,
+      },
     };
   }
 
   /**
    * Update user settings
-   * Note: Settings are stored in user_settings table in the database
-   * This method currently doesn't update the database
    */
   async updateSettings(userId: string, data: {
     theme?: string;
@@ -177,10 +282,35 @@ class UserRepository {
     reminderTime?: string;
     pushNotifications?: boolean;
   }) {
-    // TODO: Implement actual settings update in user_settings table
+    // Upsert settings - create if doesn't exist, update if it does
+    const settings = await prisma.userSettings.upsert({
+      where: { userId },
+      create: {
+        userId,
+        theme: data.theme ?? 'system',
+        dailyGoal: data.dailyGoal ?? 20,
+        showExplanations: data.showExplanations ?? true,
+        soundEffects: data.soundEffects ?? true,
+        weeklyProgressReport: data.weeklyProgressReport ?? true,
+        examReminders: data.examReminders ?? true,
+        dailyStudyReminder: data.dailyStudyReminder ?? false,
+        reminderTime: data.reminderTime ?? '09:00',
+        pushNotifications: data.pushNotifications ?? false,
+      },
+      update: data,
+    });
+
     return {
-      id: userId,
-      ...data,
+      id: settings.id,
+      theme: settings.theme,
+      dailyGoal: settings.dailyGoal,
+      showExplanations: settings.showExplanations,
+      soundEffects: settings.soundEffects,
+      weeklyProgressReport: settings.weeklyProgressReport,
+      examReminders: settings.examReminders,
+      dailyStudyReminder: settings.dailyStudyReminder,
+      reminderTime: settings.reminderTime,
+      pushNotifications: settings.pushNotifications,
     };
   }
 

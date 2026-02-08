@@ -26,6 +26,7 @@ interface AuthContextType {
   register: (email: string, password: string) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  resendVerificationEmail: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -208,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const response = await authApi.getProfile();
       if (response.success) {
         setUser(response.data);
+        setStoredUser(response.data);
       }
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
@@ -215,6 +217,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
   }, [logout]);
+
+  const resendVerificationEmail = useCallback(async () => {
+    const response = await fetch('/api/auth/resend-verification', {
+      method: 'POST',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({ message: 'Failed to resend verification email' }));
+      throw new Error(data.message || 'Failed to resend verification email');
+    }
+  }, []);
 
   // AUTO-REFRESH: Automatically refresh access token before it expires
   const refreshAccessToken = useCallback(async () => {
@@ -272,6 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     register,
     logout,
     refreshUser,
+    resendVerificationEmail,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -290,6 +305,7 @@ export function useAuth() {
       register: async () => {},
       logout: () => {},
       refreshUser: async () => {},
+      resendVerificationEmail: async () => {},
     };
   }
 

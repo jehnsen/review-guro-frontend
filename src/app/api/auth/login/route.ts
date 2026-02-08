@@ -1,11 +1,13 @@
 /**
  * POST /api/auth/login
  * Authenticate user and set httpOnly cookie with JWT
+ * Rate limited: 5 requests per minute per IP
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authService } from '@/server/services/auth.service';
 import { createSuccessResponse, createErrorResponse } from '@/server/utils/nextResponse';
+import { rateLimiters } from '@/server/middlewares/rateLimit';
 import { LoginDTO } from '@/server/types';
 import { z } from 'zod';
 
@@ -14,7 +16,7 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   try {
     const body = await request.json();
 
@@ -75,3 +77,5 @@ export async function POST(request: NextRequest) {
     return createErrorResponse(error as Error);
   }
 }
+
+export const POST = rateLimiters.login(handler);

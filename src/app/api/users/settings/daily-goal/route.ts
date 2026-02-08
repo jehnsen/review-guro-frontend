@@ -19,13 +19,13 @@ async function patchHandler(request: AuthenticatedRequest) {
     // Validate input
     const validatedData = updateDailyGoalSchema.parse(body);
 
-    // Update daily goal
-    const updatedUser = await userRepository.updateSettings(userId, {
+    // Update daily goal in database
+    const updatedSettings = await userRepository.updateSettings(userId, {
       dailyGoal: validatedData.dailyGoal,
     });
 
     return createSuccessResponse(
-      { dailyGoal: updatedUser.dailyGoal },
+      { dailyGoal: updatedSettings.dailyGoal },
       'Daily goal updated successfully'
     );
   } catch (error) {

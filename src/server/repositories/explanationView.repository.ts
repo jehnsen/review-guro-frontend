@@ -1,16 +1,22 @@
 /**
  * Explanation View Repository
  * Tracks daily explanation views for taste test feature
+ *
+ * TIMEZONE HANDLING:
+ * All dates are stored in Philippine Time (PHT / GMT+8) to ensure consistent
+ * daily limits for users. This prevents confusion where users viewing explanations
+ * late at night PHT would have those views count towards the next UTC day.
  */
 
 import { prisma } from '../config/database';
+import { getTodayDatePHT, getDateOnlyPHT, getDaysAgoPHT } from '../utils/timezone';
 
 class ExplanationViewRepository {
   /**
    * Get today's explanation view count for a user
    */
   async getTodayCount(userId: string): Promise<number> {
-    const today = this.getTodayDateUTC();
+    const today = getTodayDatePHT();
 
     const record = await prisma.dailyExplanationView.findUnique({
       where: {
@@ -28,7 +34,7 @@ class ExplanationViewRepository {
    * Increment today's explanation view count
    */
   async incrementTodayCount(userId: string): Promise<number> {
-    const today = this.getTodayDateUTC();
+    const today = getTodayDatePHT();
 
     const record = await prisma.dailyExplanationView.upsert({
       where: {
@@ -56,7 +62,7 @@ class ExplanationViewRepository {
    * Get view count for a specific date
    */
   async getCountForDate(userId: string, date: Date): Promise<number> {
-    const dateOnly = this.getDateOnly(date);
+    const dateOnly = getDateOnlyPHT(date);
 
     const record = await prisma.dailyExplanationView.findUnique({
       where: {
@@ -74,9 +80,7 @@ class ExplanationViewRepository {
    * Get user's view history for the last N days
    */
   async getHistory(userId: string, days: number = 7): Promise<Array<{ date: Date; count: number }>> {
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-    startDate.setUTCHours(0, 0, 0, 0);
+    const startDate = getDaysAgoPHT(days);
 
     const records = await prisma.dailyExplanationView.findMany({
       where: {
@@ -94,23 +98,6 @@ class ExplanationViewRepository {
       date: r.date,
       count: r.viewCount,
     }));
-  }
-
-  /**
-   * Helper: Get today's date in UTC (date only, no time)
-   */
-  private getTodayDateUTC(): Date {
-    const now = new Date();
-    return this.getDateOnly(now);
-  }
-
-  /**
-   * Helper: Extract date only (strip time component) in UTC
-   */
-  private getDateOnly(date: Date): Date {
-    const utcDate = new Date(date);
-    utcDate.setUTCHours(0, 0, 0, 0);
-    return utcDate;
   }
 }
 

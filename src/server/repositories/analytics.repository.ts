@@ -2,10 +2,16 @@
  * Analytics Repository Layer
  * Data access for analytics and statistics
  * Combines data from UserProgress (practice) and MockExamSession (mock exams)
+ *
+ * TIMEZONE HANDLING:
+ * All date-related calculations use Philippine Time (PHT / GMT+8) to ensure
+ * consistent behavior for Filipino users. This includes weekly activity,
+ * streak calculations, and daily breakdowns.
  */
 
 import { prisma } from '../config/database';
 import { QuestionCategory } from '@prisma/client';
+import { getDaysAgoPHT, formatDatePHT } from '../utils/timezone';
 
 export class AnalyticsRepository {
   /**
@@ -124,6 +130,7 @@ export class AnalyticsRepository {
 
   /**
    * Get weekly activity (last 7 days) - combines practice and mock exams
+   * Uses Philippine Time (PHT) for date grouping
    */
   async getWeeklyActivity(userId: string): Promise<
     Array<{
@@ -135,8 +142,7 @@ export class AnalyticsRepository {
       mockExamQuestions: number;
     }>
   > {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const sevenDaysAgo = getDaysAgoPHT(7);
 
     // Get practice attempts
     const practiceAttempts = await prisma.userProgress.findMany({
@@ -167,7 +173,7 @@ export class AnalyticsRepository {
       },
     });
 
-    // Group by date
+    // Group by date using PHT
     const dailyStats = new Map<string, {
       practiceTotal: number;
       practiceCorrect: number;
@@ -175,17 +181,15 @@ export class AnalyticsRepository {
       mockCorrect: number;
     }>();
 
-    // Initialize all 7 days
+    // Initialize all 7 days using PHT dates
     for (let i = 6; i >= 0; i--) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      const dateKey = date.toISOString().split('T')[0];
+      const dateKey = formatDatePHT(getDaysAgoPHT(i));
       dailyStats.set(dateKey, { practiceTotal: 0, practiceCorrect: 0, mockTotal: 0, mockCorrect: 0 });
     }
 
-    // Populate with practice data
+    // Populate with practice data (convert to PHT for grouping)
     practiceAttempts.forEach((attempt) => {
-      const dateKey = attempt.createdAt.toISOString().split('T')[0];
+      const dateKey = formatDatePHT(attempt.createdAt);
       const stats = dailyStats.get(dateKey);
       if (stats) {
         stats.practiceTotal++;
@@ -193,10 +197,10 @@ export class AnalyticsRepository {
       }
     });
 
-    // Populate with mock exam data
+    // Populate with mock exam data (convert to PHT for grouping)
     mockExams.forEach((exam) => {
       if (exam.completedAt) {
-        const dateKey = exam.completedAt.toISOString().split('T')[0];
+        const dateKey = formatDatePHT(exam.completedAt);
         const stats = dailyStats.get(dateKey);
         if (stats) {
           stats.mockTotal += exam.totalQuestions;
@@ -295,6 +299,7 @@ export class AnalyticsRepository {
 
   /**
    * Get user's study streak (consecutive days) - includes both practice and mock exams
+   * Uses Philippine Time (PHT) for date calculations
    */
   async getStudyStreak(userId: string): Promise<{
     currentStreak: number;
@@ -344,22 +349,20 @@ export class AnalyticsRepository {
     // Sort by date descending
     allDates.sort((a, b) => b.getTime() - a.getTime());
 
-    // Get unique dates
+    // Get unique dates using PHT for correct date grouping
     const uniqueDates = new Set<string>();
     allDates.forEach((date) => {
-      uniqueDates.add(date.toISOString().split('T')[0]);
+      uniqueDates.add(formatDatePHT(date));
     });
 
     const sortedDates = Array.from(uniqueDates).sort().reverse();
 
-    // Calculate current streak
+    // Calculate current streak using PHT
     let currentStreak = 0;
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const todayPHT = formatDatePHT(new Date());
+    const yesterdayPHT = formatDatePHT(getDaysAgoPHT(1));
 
-    if (sortedDates[0] === today || sortedDates[0] === yesterdayStr) {
+    if (sortedDates[0] === todayPHT || sortedDates[0] === yesterdayPHT) {
       currentStreak = 1;
       for (let i = 1; i < sortedDates.length; i++) {
         const currentDate = new Date(sortedDates[i - 1]);

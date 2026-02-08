@@ -47,6 +47,10 @@ const envSchema = z.object({
   FREE_TIER_PRACTICE_LIMIT_PER_DAY: z.string().transform(Number).default('15'),
   FREE_TIER_MOCK_EXAM_QUESTIONS_LIMIT: z.string().transform(Number).default('20'),
   FREE_TIER_MOCK_EXAMS_PER_MONTH: z.string().transform(Number).default('3'),
+
+  // Email (Resend)
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('ReviewGuro <noreply@reviewguro.com>'),
 });
 
 // Parse and validate environment variables
@@ -111,6 +115,10 @@ export const config = {
     practiceLimitPerDay: env.FREE_TIER_PRACTICE_LIMIT_PER_DAY,
     mockExamQuestionsLimit: env.FREE_TIER_MOCK_EXAM_QUESTIONS_LIMIT,
     mockExamsPerMonth: env.FREE_TIER_MOCK_EXAMS_PER_MONTH,
+  },
+  email: {
+    resendApiKey: env.RESEND_API_KEY,
+    from: env.EMAIL_FROM,
   },
 };
 

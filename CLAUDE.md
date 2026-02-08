@@ -382,5 +382,153 @@ For issues and feedback, refer to the project repository issue tracker.
 
 ---
 
-**Last Updated**: 2026-02-02
-**Project Status**: Active Development (Vercel Branch)
+## Security Features
+
+### Authentication Security
+- **httpOnly Cookies**: JWT tokens stored in httpOnly cookies (XSS protection)
+- **CSRF Protection**: SameSite cookie attribute prevents cross-site attacks
+- **HTTPS Enforcement**: Secure flag ensures tokens only sent over HTTPS
+- **Automatic Cookie Management**: Browser-managed token storage and expiry
+- **Signature Verification**: PayMongo webhook signatures verified to prevent tampering
+- **Rate Limiting**: Protection against brute force attacks on auth endpoints
+- **Environment Validation**: Application exits on missing critical ENV variables
+
+**Security Documentation**: [SECURITY_FIX_XSS_JWT.md](SECURITY_FIX_XSS_JWT.md)
+
+### Recent Security Fixes (2026-02-07)
+1. **XSS Vulnerability (CRITICAL)**: Migrated from localStorage to httpOnly cookies
+2. **Webhook Security**: Added signature verification for PayMongo webhooks
+3. **Payment Verification**: Fixed exploitable manual payment verification
+4. **Environment Security**: Added validation that crashes app on missing critical ENV vars
+5. **Token Flow**: Removed dangerous manual refresh token flow
+
+## Testing
+
+### Test Infrastructure
+- **Testing Framework**: Vitest
+- **Testing Library**: React Testing Library
+- **DOM Environment**: jsdom
+
+### Test Commands
+```bash
+npm run test              # Run tests in watch mode
+npm run test:run          # Run tests once
+npm run test:coverage     # Run tests with coverage report
+```
+
+### Test Files
+Located in [src/__tests__/](src/__tests__/)
+
+## New Authentication Features
+
+### Email Verification System
+- Email verification required for new accounts
+- Verification token sent via email (Resend)
+- Verification banner shown to unverified users
+- Resend verification email functionality
+
+**API Routes**:
+- `POST /api/auth/verify-email` - Verify email with token
+- `POST /api/auth/resend-verification` - Resend verification email
+
+**Files**: [src/app/verify-email/](src/app/verify-email/), [src/components/ui/VerificationBanner.tsx](src/components/ui/VerificationBanner.tsx)
+
+### Password Reset System
+- Secure password reset via email
+- Time-limited reset tokens
+- Token invalidation after use
+- Rate limiting on reset requests
+
+**API Routes**:
+- `POST /api/auth/forgot-password` - Request password reset
+- `POST /api/auth/reset-password` - Reset password with token
+
+**Files**: [src/app/forgot-password/](src/app/forgot-password/), [src/app/reset-password/](src/app/reset-password/)
+
+### Enhanced Middleware
+- **Rate Limiting**: Protection against abuse on sensitive endpoints
+- **Email Service**: Integrated Resend for transactional emails
+- **Timezone Utilities**: Proper timezone handling for analytics
+
+**Files**: [src/server/middlewares/rateLimit.ts](src/server/middlewares/rateLimit.ts), [src/server/services/email.service.ts](src/server/services/email.service.ts), [src/server/utils/timezone.ts](src/server/utils/timezone.ts)
+
+## Error Handling
+
+### Global Error Boundaries
+- **Page-Level**: [src/app/error.tsx](src/app/error.tsx) - Catches errors in page components
+- **Global**: [src/app/global-error.tsx](src/app/global-error.tsx) - Catches errors across entire app
+- **Component-Level**: [src/components/ui/ErrorBoundary.tsx](src/components/ui/ErrorBoundary.tsx) - Reusable error boundary
+
+## Layout Structure
+
+The application uses nested layouts for better code organization:
+- [src/app/analytics/layout.tsx](src/app/analytics/layout.tsx) - Analytics section layout
+- [src/app/mock-exam/layout.tsx](src/app/mock-exam/layout.tsx) - Mock exam section layout
+- [src/app/practice/layout.tsx](src/app/practice/layout.tsx) - Practice section layout
+- [src/app/pricing/layout.tsx](src/app/pricing/layout.tsx) - Pricing section layout
+- [src/app/settings/layout.tsx](src/app/settings/layout.tsx) - Settings section layout
+- [src/app/sign-in/layout.tsx](src/app/sign-in/layout.tsx) - Sign in page layout
+- [src/app/sign-up/layout.tsx](src/app/sign-up/layout.tsx) - Sign up page layout
+
+## Updated Environment Variables
+
+Required in `.env`:
+```env
+# Database
+DATABASE_URL=              # PostgreSQL connection string
+DIRECT_URL=                # Direct PostgreSQL connection (Prisma)
+
+# Authentication
+JWT_SECRET=                # JWT signing secret
+JWT_EXPIRES_IN=            # Access token expiry (e.g., "15m")
+REFRESH_TOKEN_SECRET=      # Refresh token secret
+REFRESH_TOKEN_EXPIRES_IN=  # Refresh token expiry (e.g., "7d")
+
+# AI
+OPENAI_API_KEY=            # OpenAI API key for explanations
+
+# Payments
+PAYMONGO_SECRET_KEY=       # PayMongo secret key
+PAYMONGO_PUBLIC_KEY=       # PayMongo public key
+PAYMONGO_WEBHOOK_SECRET=   # PayMongo webhook signature secret
+
+# Email
+RESEND_API_KEY=            # Resend API key for transactional emails
+EMAIL_FROM=                # From email address (e.g., "noreply@reviewguro.com")
+
+# App
+NEXT_PUBLIC_APP_URL=       # Application URL (e.g., "https://reviewguro.com")
+NODE_ENV=                  # development/production
+
+# Optional
+REDIS_URL=                 # Redis connection string (optional)
+```
+
+## Useful Commands
+
+```bash
+# Development
+npm run dev              # Start dev server
+npm run build            # Build for production
+npm run start            # Start production server
+npm run lint             # Run ESLint
+
+# Testing
+npm run test             # Run tests in watch mode
+npm run test:run         # Run tests once
+npm run test:coverage    # Run tests with coverage
+
+# Database
+npm run prisma:generate  # Generate Prisma client
+npm run prisma:migrate   # Run migrations (dev)
+npm run prisma:push      # Push schema to DB
+npm run prisma:studio    # Open database GUI
+npm run seed             # Populate questions
+```
+
+---
+
+**Last Updated**: 2026-02-08
+**Project Status**: Active Development
+**Current Branch**: main
+**Latest Security Update**: 2026-02-07

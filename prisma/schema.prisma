@@ -60,6 +60,15 @@ model User {
   lastName  String? @map("last_name")
   avatarUrl String? @map("photo_url")
 
+  // Email verification
+  emailVerified           Boolean   @default(false) @map("email_verified")
+  emailVerificationToken  String?   @unique @map("email_verification_token")
+  emailVerificationExpiry DateTime? @map("email_verification_expiry")
+
+  // Password reset
+  passwordResetToken      String?   @unique @map("password_reset_token")
+  passwordResetExpiry     DateTime? @map("password_reset_expiry")
+
   // Subscription
   isPremium     Boolean   @default(false) @map("is_premium")
   premiumExpiry DateTime? @map("premium_expiry")
@@ -82,6 +91,7 @@ model User {
   payments          Payment[]
   analytics         DailyAnalytics[]
   explanationViews  DailyExplanationView[]
+  settings          UserSettings?
 
   @@index([email])
   @@map("users")
@@ -283,4 +293,35 @@ model Payment {
   @@index([status])
   @@index([createdAt])
   @@map("payment_verifications")
+}
+
+// ============================================
+// User Settings
+// ============================================
+
+model UserSettings {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+
+  // Appearance
+  theme String @default("system") // "light", "dark", "system"
+
+  // Study Preferences
+  dailyGoal        Int     @default(20) @map("daily_goal")
+  showExplanations Boolean @default(true) @map("show_explanations")
+  soundEffects     Boolean @default(true) @map("sound_effects")
+
+  // Notifications
+  weeklyProgressReport Boolean @default(true) @map("weekly_progress_report")
+  examReminders        Boolean @default(true) @map("exam_reminders")
+  dailyStudyReminder   Boolean @default(false) @map("daily_study_reminder")
+  reminderTime         String  @default("09:00") @map("reminder_time")
+  pushNotifications    Boolean @default(false) @map("push_notifications")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
 }

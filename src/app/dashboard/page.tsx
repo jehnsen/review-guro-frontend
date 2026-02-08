@@ -15,7 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
-import { Button, Card, CardTitle } from "@/components/ui";
+import { Button, Card, CardTitle, VerificationBanner } from "@/components/ui";
 import { useAuth } from "@/contexts/AuthContext";
 import { dashboardApi, UserStats, CategoryProgress, categoryDisplayNames, Question } from "@/server/api";
 
@@ -115,6 +115,11 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout>
+      {/* Email Verification Banner */}
+      {user && !user.emailVerified && (
+        <VerificationBanner email={user.email} />
+      )}
+
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Welcome Banner */}
         <div className="bg-linear-to-r from-blue-600 via-blue-700 to-indigo-500 rounded-2xl p-6 lg:p-8 text-white relative overflow-hidden">

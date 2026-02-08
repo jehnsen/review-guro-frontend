@@ -1,12 +1,23 @@
 /**
  * Streak Service
  * Business logic for streak tracking and repair
+ *
+ * TIMEZONE HANDLING:
+ * All streak calculations use Philippine Time (PHT / GMT+8) to ensure
+ * consistent behavior for Filipino users. A user practicing at 11 PM PHT
+ * should have that count towards their current day's streak, not the next day.
  */
 
 import { streakRepository } from '../repositories/streak.repository';
 import { userRepository } from '../repositories/user.repository';
 import { getUserAccessLimits } from '../utils/accessControl';
 import { BadRequestError, NotFoundError } from '../utils/errors';
+import {
+  getTodayDatePHT,
+  daysBetweenPHT,
+  isSameDayPHT,
+  getYesterdayDatePHT,
+} from '../utils/timezone';
 
 // Streak repair costs (can be configured)
 const STREAK_REPAIR_COST = 50; // points or currency
@@ -16,13 +27,16 @@ class StreakService {
   /**
    * Update user's streak based on activity
    * Called when user completes a practice question
+   *
+   * Uses Philippine Time (PHT) for all date calculations to ensure
+   * consistent behavior for Filipino users.
    */
   async updateStreak(userId: string): Promise<{
     currentStreak: number;
     longestStreak: number;
     isNewRecord: boolean;
   }> {
-    const today = this.getTodayDateUTC();
+    const today = getTodayDatePHT();
     const streak = await streakRepository.findOrCreate(userId);
 
     // If no previous activity, start streak at 1
@@ -40,11 +54,11 @@ class StreakService {
       };
     }
 
-    // Calculate days since last activity
+    // Calculate days since last activity using PHT
     const lastActivity = new Date(streak.lastActivityDate);
-    const daysSinceLastActivity = this.daysBetween(lastActivity, today);
+    const daysSinceLastActivity = daysBetweenPHT(lastActivity, new Date());
 
-    // Same day - no change
+    // Same day in PHT - no change
     if (daysSinceLastActivity === 0) {
       return {
         currentStreak: streak.currentStreak,
@@ -84,6 +98,7 @@ class StreakService {
 
   /**
    * Get streak status with repair information
+   * Uses Philippine Time (PHT) for all date calculations
    */
   async getStreakStatus(userId: string): Promise<{
     currentStreak: number;
@@ -94,15 +109,15 @@ class StreakService {
     repairCost: number;
   }> {
     const streak = await streakRepository.findOrCreate(userId);
-    const today = this.getTodayDateUTC();
+    const today = getTodayDatePHT();
 
-    // Calculate missed days
+    // Calculate missed days using PHT
     let missedDays = 0;
     let canRepair = false;
 
     if (streak.lastActivityDate) {
       const lastActivity = new Date(streak.lastActivityDate);
-      const daysSinceLastActivity = this.daysBetween(lastActivity, today);
+      const daysSinceLastActivity = daysBetweenPHT(lastActivity, new Date());
 
       // Missed days = daysSince - 1 (excluding today)
       missedDays = Math.max(0, daysSinceLastActivity - 1);
@@ -112,10 +127,10 @@ class StreakService {
       // 2. Haven't repaired today already
       canRepair = missedDays === 1 && daysSinceLastActivity === 2;
 
-      // Check if already repaired today
+      // Check if already repaired today (in PHT)
       if (canRepair && streak.streakRepairedAt) {
         const repairedDate = new Date(streak.streakRepairedAt);
-        const repairedToday = this.isSameDay(repairedDate, today);
+        const repairedToday = isSameDayPHT(repairedDate, new Date());
         canRepair = !repairedToday;
       }
     }
@@ -171,10 +186,9 @@ class StreakService {
       // For now, we'll allow it for free
     }
 
-    // Repair the streak
-    const today = this.getTodayDateUTC();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+    // Repair the streak using PHT dates
+    const today = getTodayDatePHT();
+    const yesterday = getYesterdayDatePHT();
 
     const updated = await streakRepository.update(userId, {
       lastActivityDate: yesterday, // Set to yesterday to allow continuation
@@ -189,35 +203,6 @@ class StreakService {
     };
   }
 
-  /**
-   * Helper: Get today's date in UTC (date only)
-   */
-  private getTodayDateUTC(): Date {
-    const now = new Date();
-    const utcDate = new Date(now);
-    utcDate.setUTCHours(0, 0, 0, 0);
-    return utcDate;
-  }
-
-  /**
-   * Helper: Calculate days between two dates
-   */
-  private daysBetween(date1: Date, date2: Date): number {
-    const d1 = new Date(date1);
-    const d2 = new Date(date2);
-    d1.setUTCHours(0, 0, 0, 0);
-    d2.setUTCHours(0, 0, 0, 0);
-
-    const diffTime = d2.getTime() - d1.getTime();
-    return Math.floor(diffTime / (1000 * 60 * 60 * 24));
-  }
-
-  /**
-   * Helper: Check if two dates are the same day
-   */
-  private isSameDay(date1: Date, date2: Date): boolean {
-    return this.daysBetween(date1, date2) === 0;
-  }
 }
 
 export const streakService = new StreakService();

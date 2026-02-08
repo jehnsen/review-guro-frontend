@@ -1,11 +1,13 @@
 /**
  * POST /api/auth/register
  * Register a new user account and set httpOnly cookie with JWT
+ * Rate limited: 3 requests per minute per IP
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authService } from '@/server/services/auth.service';
 import { createSuccessResponse, createErrorResponse } from '@/server/utils/nextResponse';
+import { rateLimiters } from '@/server/middlewares/rateLimit';
 import { RegisterDTO } from '@/server/types';
 import { z } from 'zod';
 
@@ -14,7 +16,7 @@ const registerSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
 });
 
-export async function POST(request: NextRequest) {
+async function handler(request: NextRequest) {
   try {
     const body = await request.json();
 
@@ -39,8 +41,9 @@ export async function POST(request: NextRequest) {
       {
         user: result.user,
         expiresIn: result.expiresIn,
+        emailVerificationSent: true,
       },
-      'Registration successful',
+      'Registration successful. Please check your email to verify your account.',
       201
     );
 
@@ -76,3 +79,5 @@ export async function POST(request: NextRequest) {
     return createErrorResponse(error as Error);
   }
 }
+
+export const POST = rateLimiters.register(handler);

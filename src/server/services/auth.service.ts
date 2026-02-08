@@ -19,8 +19,10 @@ import {
 import {
   BadRequestError,
   ConflictError,
+  NotFoundError,
   UnauthorizedError,
 } from '../utils/errors';
+import { emailService } from './email.service';
 
 class AuthService {
   private readonly SALT_ROUNDS = 12;
@@ -54,10 +56,22 @@ class AuthService {
     // Hash password with bcrypt
     const hashedPassword = await bcrypt.hash(password, this.SALT_ROUNDS);
 
-    // Create user in database
+    // Generate email verification token
+    const verificationToken = this.generateVerificationToken();
+    const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Create user in database with verification token
     const user = await userRepository.create({
       email: email.toLowerCase().trim(),
       password: hashedPassword,
+      emailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpiry: verificationExpiry,
+    });
+
+    // Send verification email (non-blocking)
+    emailService.sendVerificationEmail(user.email, verificationToken).catch((error) => {
+      console.error('[AuthService] Failed to send verification email:', error);
     });
 
     // Generate tokens
@@ -80,6 +94,71 @@ class AuthService {
       refreshToken,
       expiresIn: config.jwt.expiresIn,
     };
+  }
+
+  /**
+   * Verify user's email address using verification token
+   *
+   * @param token - Email verification token
+   * @returns SafeUser with updated verification status
+   * @throws NotFoundError if token is invalid
+   * @throws BadRequestError if token has expired
+   */
+  async verifyEmail(token: string): Promise<SafeUser> {
+    const user = await userRepository.findByVerificationToken(token);
+
+    if (!user) {
+      throw new NotFoundError('Invalid verification token');
+    }
+
+    if (user.emailVerified) {
+      throw new BadRequestError('Email is already verified');
+    }
+
+    if (user.emailVerificationExpiry && user.emailVerificationExpiry < new Date()) {
+      throw new BadRequestError('Verification token has expired. Please request a new one.');
+    }
+
+    // Mark email as verified and clear token
+    const updatedUser = await userRepository.updateVerificationStatus(user.id, true);
+
+    return userRepository.toSafeUser(updatedUser);
+  }
+
+  /**
+   * Resend verification email to user
+   *
+   * @param userId - User ID
+   * @throws NotFoundError if user not found
+   * @throws BadRequestError if email is already verified
+   */
+  async resendVerificationEmail(userId: string): Promise<void> {
+    const user = await userRepository.findById(userId);
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    if (user.emailVerified) {
+      throw new BadRequestError('Email is already verified');
+    }
+
+    // Generate new verification token
+    const verificationToken = this.generateVerificationToken();
+    const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Update user with new token
+    await userRepository.updateVerificationToken(userId, verificationToken, verificationExpiry);
+
+    // Send verification email
+    await emailService.sendVerificationEmail(user.email, verificationToken);
+  }
+
+  /**
+   * Generate secure email verification token
+   */
+  private generateVerificationToken(): string {
+    return crypto.randomBytes(32).toString('hex');
   }
 
   /**
@@ -377,6 +456,70 @@ class AuthService {
     if (userAgent.includes('Edge')) return 'Edge Browser';
 
     return 'Unknown Browser';
+  }
+
+  /**
+   * Request password reset
+   * Generates a reset token and sends email
+   *
+   * @param email - User's email address
+   * @throws NotFoundError if email doesn't exist (we don't reveal this to prevent enumeration)
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await userRepository.findByEmail(email.toLowerCase().trim());
+
+    // Always return success to prevent email enumeration attacks
+    // but only send email if user exists
+    if (!user) {
+      return;
+    }
+
+    // Generate password reset token
+    const resetToken = this.generateVerificationToken();
+    const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Update user with reset token
+    await userRepository.updatePasswordResetToken(user.id, resetToken, resetExpiry);
+
+    // Send password reset email (non-blocking)
+    emailService.sendPasswordResetEmail(user.email, resetToken).catch((error) => {
+      console.error('[AuthService] Failed to send password reset email:', error);
+    });
+  }
+
+  /**
+   * Reset password using token
+   *
+   * @param token - Password reset token
+   * @param newPassword - New password
+   * @throws NotFoundError if token is invalid
+   * @throws BadRequestError if token has expired
+   */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const user = await userRepository.findByPasswordResetToken(token);
+
+    if (!user) {
+      throw new NotFoundError('Invalid or expired reset token');
+    }
+
+    if (user.passwordResetExpiry && user.passwordResetExpiry < new Date()) {
+      // Clear the expired token
+      await userRepository.clearPasswordResetToken(user.id);
+      throw new BadRequestError('Reset token has expired. Please request a new password reset.');
+    }
+
+    // Validate new password strength
+    this.validatePassword(newPassword);
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, this.SALT_ROUNDS);
+
+    // Update password and clear reset token
+    await userRepository.updatePassword(user.id, hashedPassword);
+    await userRepository.clearPasswordResetToken(user.id);
+
+    // Invalidate all existing sessions for security
+    await sessionRepository.deleteAllByUserId(user.id);
   }
 
   /**

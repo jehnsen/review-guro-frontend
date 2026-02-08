@@ -19,16 +19,15 @@ async function patchHandler(request: AuthenticatedRequest) {
     // Validate input
     const validatedData = updateAppearanceSchema.parse(body);
 
-    // Update appearance
+    // Update appearance in database
     const updatedSettings = await userRepository.updateSettings(userId, {
       theme: validatedData.darkMode ? 'dark' : 'light',
     });
 
-    const settings = {
-      theme: updatedSettings.theme,
-    };
-
-    return createSuccessResponse(settings, 'Appearance updated successfully');
+    return createSuccessResponse(
+      { theme: updatedSettings.theme },
+      'Appearance updated successfully'
+    );
   } catch (error) {
     if (error instanceof z.ZodError) {
       return createErrorResponse(

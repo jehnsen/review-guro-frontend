@@ -68,12 +68,22 @@ export interface SafeUser {
   isPremium: boolean;
   premiumExpiry: Date | null;
   examDate: Date | null;
+  emailVerified: boolean;
   createdAt: Date;
 }
 
 export interface ChangePasswordDTO {
   currentPassword: string;
   newPassword: string;
+}
+
+export interface ForgotPasswordDTO {
+  email: string;
+}
+
+export interface ResetPasswordDTO {
+  token: string;
+  password: string;
 }
 
 // ============================================

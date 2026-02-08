@@ -163,7 +163,7 @@ export default function SignInPage() {
                 <span className="text-slate-600 dark:text-slate-400">Remember me</span>
               </label>
               <Link
-                href="#"
+                href="/forgot-password"
                 className="text-blue-600 dark:text-blue-400 hover:underline"
               >
                 Forgot password?

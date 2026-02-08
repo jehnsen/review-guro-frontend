@@ -1,9 +1,11 @@
 /**
  * POST /api/practice/explain
  * Get AI-generated explanation for a question
+ * Rate limited: 10 requests per minute per IP
  */
 
 import { withAuth, getAuthUser, AuthenticatedRequest } from '@/server/middlewares/withAuth';
+import { withRateLimit, RATE_LIMITS } from '@/server/middlewares/rateLimit';
 import { practiceService } from '@/server/services/practice.service';
 import { createSuccessResponse, createErrorResponse } from '@/server/utils/nextResponse';
 import { ExplainRequestDTO } from '@/server/types';
@@ -40,4 +42,9 @@ async function handler(request: AuthenticatedRequest) {
   }
 }
 
-export const POST = withAuth(handler);
+// Apply both rate limiting and authentication
+// Rate limit is checked first to reject excessive requests before auth overhead
+export const POST = withRateLimit(
+  withAuth(handler),
+  { limit: RATE_LIMITS.AI_EXPLAIN, endpoint: 'practice/explain' }
+);

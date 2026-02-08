@@ -25,23 +25,8 @@ async function getHandler(request: AuthenticatedRequest) {
       return createErrorResponse(new Error('User not found'), 404);
     }
 
-    const settings = {
-      appearance: {
-        theme: 'system' as const,
-      },
-      studyPreferences: {
-        dailyGoal: 20,
-        showExplanations: true,
-        soundEffects: true,
-      },
-      notifications: {
-        weeklyProgressReport: true,
-        examReminders: true,
-        dailyStudyReminder: false,
-        reminderTime: '09:00',
-        pushNotifications: false,
-      },
-    };
+    // Get settings from database (creates defaults if none exist)
+    const settings = await userRepository.getSettings(userId);
 
     return createSuccessResponse(settings, 'Settings retrieved successfully');
   } catch (error) {
@@ -57,27 +42,11 @@ async function patchHandler(request: AuthenticatedRequest) {
     // Validate input
     const validatedData = updateSettingsSchema.parse(body);
 
-    // Update settings (repository method handles the actual update)
+    // Update settings in database
     await userRepository.updateSettings(userId, validatedData);
 
-    // Return updated settings structure with default values
-    const settings = {
-      appearance: {
-        theme: 'system' as const,
-      },
-      studyPreferences: {
-        dailyGoal: 20,
-        showExplanations: true,
-        soundEffects: true,
-      },
-      notifications: {
-        weeklyProgressReport: true,
-        examReminders: true,
-        dailyStudyReminder: false,
-        reminderTime: '09:00',
-        pushNotifications: false,
-      },
-    };
+    // Return updated settings from database
+    const settings = await userRepository.getSettings(userId);
 
     return createSuccessResponse(settings, 'Settings updated successfully');
   } catch (error) {
