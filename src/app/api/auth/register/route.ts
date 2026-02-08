@@ -1,9 +1,9 @@
 /**
  * POST /api/auth/register
- * Register a new user account
+ * Register a new user account and set httpOnly cookie with JWT
  */
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { authService } from '@/server/services/auth.service';
 import { createSuccessResponse, createErrorResponse } from '@/server/utils/nextResponse';
 import { RegisterDTO } from '@/server/types';
@@ -21,10 +21,50 @@ export async function POST(request: NextRequest) {
     // Validate input
     const validatedData = registerSchema.parse(body);
 
-    // Register user
-    const result = await authService.register(validatedData as RegisterDTO);
+    // Extract user agent and IP address for session tracking
+    const userAgent = request.headers.get('user-agent') || undefined;
+    const ipAddress = request.headers.get('x-forwarded-for') ||
+                      request.headers.get('x-real-ip') ||
+                      undefined;
 
-    return createSuccessResponse(result, 'Registration successful', 201);
+    // Register user and create session
+    const result = await authService.register(
+      validatedData as RegisterDTO,
+      userAgent,
+      ipAddress
+    );
+
+    // Create response with user data (tokens not in body for security)
+    const response = createSuccessResponse(
+      {
+        user: result.user,
+        expiresIn: result.expiresIn,
+      },
+      'Registration successful',
+      201
+    );
+
+    // Set httpOnly cookie with access token (short-lived, 15 minutes)
+    // This prevents XSS attacks as JavaScript cannot access httpOnly cookies
+    response.cookies.set('auth_token', result.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 15 * 60, // 15 minutes (matches JWT_EXPIRES_IN)
+      path: '/',
+    });
+
+    // Set httpOnly cookie with refresh token (long-lived, 7 days)
+    // Used to get new access tokens without re-login
+    response.cookies.set('refresh_token', result.refreshToken!, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/api/auth/refresh', // Only sent to refresh endpoint
+    });
+
+    return response;
   } catch (error) {
     if (error instanceof z.ZodError) {
       return createErrorResponse(

@@ -53,25 +53,52 @@ async function handler(request: AuthenticatedRequest) {
       );
     }
 
-    // Try to fetch payment link details from PayMongo
-    // Note: We need to get the link ID from somewhere
-    // For now, we'll process it optimistically if we have a matching payment record
+    // CRITICAL: Verify payment with PayMongo API before activating premium
+    let paymentLink;
+    try {
+      paymentLink = await paymongoService.getPaymentLinkByReference(referenceNumber);
+    } catch (error) {
+      console.error('Failed to retrieve payment link:', error);
+      return createErrorResponse(
+        new Error('Invalid reference number or payment not found'),
+        404
+      );
+    }
 
-    // Process the payment manually
+    // Verify payment status is 'paid'
+    if (paymentLink.attributes.status !== 'paid') {
+      return createErrorResponse(
+        new Error(`Payment not completed. Status: ${paymentLink.attributes.status}`),
+        400
+      );
+    }
+
+    // Extract the actual amount paid from PayMongo (in centavos)
+    const amountPaid = paymentLink.attributes.amount / 100; // Convert to pesos
+
+    // Verify this is the correct amount for Season Pass (₱399)
+    if (amountPaid !== 399) {
+      console.warn(`Payment amount mismatch: expected 399, got ${amountPaid}`);
+      // Still process but log the discrepancy
+    }
+
+    // Process the verified payment
     await prisma.$transaction(async (tx) => {
-      // 1. Create payment record
+      // 1. Create payment record with actual PayMongo data
       await tx.payment.create({
         data: {
           userId,
-          amount: 399, // Season pass price
-          currency: 'PHP',
+          amount: amountPaid,
+          currency: paymentLink.attributes.currency,
           provider: 'paymongo',
           status: 'paid',
-          description: 'Season Pass Purchase (Manual Verification)',
+          description: paymentLink.attributes.description || 'Season Pass Purchase (Manual Verification)',
           metadata: {
             referenceNumber,
+            linkId: paymentLink.id,
             manualVerification: true,
             verifiedAt: new Date().toISOString(),
+            paymongoStatus: paymentLink.attributes.status,
           },
         },
       });
@@ -82,10 +109,10 @@ async function handler(request: AuthenticatedRequest) {
         create: {
           userId,
           planName: 'Season Pass',
-          planPrice: 399,
+          planPrice: amountPaid,
           purchaseDate: new Date(),
           paymentMethod: 'paymongo',
-          amountPaid: 399,
+          amountPaid: amountPaid,
           transactionId: referenceNumber,
           status: 'active',
           expiresAt: null,
@@ -94,10 +121,10 @@ async function handler(request: AuthenticatedRequest) {
         },
         update: {
           planName: 'Season Pass',
-          planPrice: 399,
+          planPrice: amountPaid,
           purchaseDate: new Date(),
           paymentMethod: 'paymongo',
-          amountPaid: 399,
+          amountPaid: amountPaid,
           transactionId: referenceNumber,
           status: 'active',
           expiresAt: null,

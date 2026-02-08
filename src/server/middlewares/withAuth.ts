@@ -15,9 +15,18 @@ export interface AuthenticatedRequest extends NextRequest {
 }
 
 /**
- * Extract JWT token from Authorization header
+ * Extract JWT token from httpOnly cookie or Authorization header (fallback for migration)
  */
 function extractToken(request: NextRequest): string | null {
+  // SECURITY: First try to get token from httpOnly cookie (secure, XSS-proof)
+  const cookieToken = request.cookies.get('auth_token')?.value;
+
+  if (cookieToken) {
+    return cookieToken;
+  }
+
+  // MIGRATION: Fallback to Authorization header for backwards compatibility
+  // This should be removed after all clients migrate to cookie-based auth
   const authHeader = request.headers.get('authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {

@@ -34,6 +34,7 @@ const envSchema = z.object({
   // PayMongo (optional)
   PAYMONGO_SECRET_KEY: z.string().optional(),
   PAYMONGO_PUBLIC_KEY: z.string().optional(),
+  PAYMONGO_WEBHOOK_SECRET: z.string().optional(),
 
   // Payment
   SEASON_PASS_PRICE: z.string().transform(Number).default('399'),
@@ -97,6 +98,7 @@ export const config = {
   paymongo: {
     secretKey: env.PAYMONGO_SECRET_KEY,
     publicKey: env.PAYMONGO_PUBLIC_KEY,
+    webhookSecret: env.PAYMONGO_WEBHOOK_SECRET,
   },
   payment: {
     seasonPassPrice: env.SEASON_PASS_PRICE,

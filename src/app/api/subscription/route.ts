@@ -29,22 +29,38 @@ async function handler(request: AuthenticatedRequest) {
     let status: 'FREE' | 'PREMIUM' | 'EXPIRED' = 'FREE';
     let features: string[] = [];
 
-    if (subscription && subscription.expiresAt) {
+    // Primary check: use user.isPremium as the source of truth
+    // This correctly handles Season Pass where expiresAt is null (never expires)
+    if (user.isPremium) {
+      // Check if subscription has expired (only if expiresAt is set)
+      if (subscription?.expiresAt) {
+        const now = new Date();
+        const expiresAt = new Date(subscription.expiresAt);
+
+        if (expiresAt > now) {
+          status = 'PREMIUM';
+        } else {
+          status = 'EXPIRED';
+        }
+      } else {
+        // No expiry date means never expires (Season Pass)
+        status = 'PREMIUM';
+      }
+    } else if (subscription?.expiresAt) {
+      // User not premium but has subscription with expiry - check if expired
       const now = new Date();
       const expiresAt = new Date(subscription.expiresAt);
+      status = expiresAt > now ? 'PREMIUM' : 'EXPIRED';
+    }
 
-      if (expiresAt > now) {
-        status = 'PREMIUM';
-        features = [
-          'Unlimited Practice Questions',
-          'AI-Powered Tutoring',
-          'Mock Exams',
-          'Advanced Analytics',
-          'Study Progress Tracking',
-        ];
-      } else {
-        status = 'EXPIRED';
-      }
+    if (status === 'PREMIUM') {
+      features = [
+        'Unlimited Practice Questions',
+        'AI-Powered Tutoring',
+        'Mock Exams',
+        'Advanced Analytics',
+        'Study Progress Tracking',
+      ];
     }
 
     const response = {

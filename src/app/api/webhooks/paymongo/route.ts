@@ -4,13 +4,52 @@
  * This is the endpoint configured in PayMongo dashboard
  */
 
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createSuccessResponse } from '@/server/utils/nextResponse';
 import { prisma } from '@/server/config/database';
+import { paymongoService } from '@/server/services/paymongo.service';
+import { config } from '@/server/config/env';
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // SECURITY: Verify webhook signature before processing
+    const signature = request.headers.get('paymongo-signature');
+    const webhookSecret = config.paymongo.webhookSecret;
+
+    // Get raw body for signature verification
+    const rawBody = await request.text();
+
+    // If webhook secret is configured, enforce signature verification
+    if (webhookSecret) {
+      if (!signature) {
+        console.error('Webhook rejected: Missing signature header');
+        return NextResponse.json(
+          { error: 'Missing signature' },
+          { status: 401 }
+        );
+      }
+
+      const isValid = paymongoService.verifyWebhookSignature(
+        rawBody,
+        signature,
+        webhookSecret
+      );
+
+      if (!isValid) {
+        console.error('Webhook rejected: Invalid signature');
+        return NextResponse.json(
+          { error: 'Invalid signature' },
+          { status: 401 }
+        );
+      }
+
+      console.log('✅ Webhook signature verified successfully');
+    } else {
+      console.warn('⚠️ WARNING: Webhook secret not configured - signature verification disabled');
+      console.warn('⚠️ This is a SECURITY RISK in production. Set PAYMONGO_WEBHOOK_SECRET in your environment.');
+    }
+
+    const body = JSON.parse(rawBody);
 
     // Log the complete raw payload for debugging
     console.log('PayMongo webhook RAW payload:', JSON.stringify(body, null, 2));

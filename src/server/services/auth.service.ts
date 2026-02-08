@@ -3,10 +3,12 @@
  * Handles user registration, login, and token management
  */
 
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { config } from '../config/env';
 import { userRepository } from '../repositories/user.repository';
+import { sessionRepository } from '../repositories/session.repository';
 import {
   RegisterDTO,
   LoginDTO,
@@ -27,11 +29,17 @@ class AuthService {
    * Register a new user
    *
    * @param dto - Registration data (email, password)
-   * @returns AuthResponse with user data and JWT token
+   * @param userAgent - User agent string from request
+   * @param ipAddress - IP address from request
+   * @returns AuthResponse with user data, access token, and refresh token
    * @throws ConflictError if email already exists
    * @throws BadRequestError if validation fails
    */
-  async register(dto: RegisterDTO): Promise<AuthResponse> {
+  async register(
+    dto: RegisterDTO,
+    userAgent?: string,
+    ipAddress?: string
+  ): Promise<AuthResponse> {
     const { email, password } = dto;
 
     // Validate password strength
@@ -52,13 +60,24 @@ class AuthService {
       password: hashedPassword,
     });
 
-    // Generate JWT token
+    // Generate tokens
     const safeUser = userRepository.toSafeUser(user);
     const accessToken = this.generateToken(safeUser);
+    const refreshToken = this.generateRefreshToken();
+
+    // Store refresh token in database
+    await sessionRepository.create({
+      userId: user.id,
+      refreshToken,
+      userAgent,
+      ipAddress,
+      expiresAt: this.getRefreshTokenExpiry(),
+    });
 
     return {
       user: safeUser,
       accessToken,
+      refreshToken,
       expiresIn: config.jwt.expiresIn,
     };
   }
@@ -67,10 +86,16 @@ class AuthService {
    * Login user with email and password
    *
    * @param dto - Login credentials
-   * @returns AuthResponse with user data and JWT token
+   * @param userAgent - User agent string from request
+   * @param ipAddress - IP address from request
+   * @returns AuthResponse with user data, access token, and refresh token
    * @throws UnauthorizedError if credentials are invalid
    */
-  async login(dto: LoginDTO): Promise<AuthResponse> {
+  async login(
+    dto: LoginDTO,
+    userAgent?: string,
+    ipAddress?: string
+  ): Promise<AuthResponse> {
     const { email, password } = dto;
 
     // Find user by email
@@ -85,13 +110,24 @@ class AuthService {
       throw new UnauthorizedError('Invalid email or password');
     }
 
-    // Generate JWT token
+    // Generate tokens
     const safeUser = userRepository.toSafeUser(user);
     const accessToken = this.generateToken(safeUser);
+    const refreshToken = this.generateRefreshToken();
+
+    // Store refresh token in database
+    await sessionRepository.create({
+      userId: user.id,
+      refreshToken,
+      userAgent,
+      ipAddress,
+      expiresAt: this.getRefreshTokenExpiry(),
+    });
 
     return {
       user: safeUser,
       accessToken,
+      refreshToken,
       expiresIn: config.jwt.expiresIn,
     };
   }
@@ -133,7 +169,7 @@ class AuthService {
   }
 
   /**
-   * Generate JWT token for a user
+   * Generate JWT access token for a user
    */
   private generateToken(user: SafeUser): string {
     const payload: AuthTokenPayload = {
@@ -145,6 +181,49 @@ class AuthService {
     return jwt.sign(payload, config.jwt.secret, {
       expiresIn: config.jwt.expiresIn as jwt.SignOptions['expiresIn'],
     });
+  }
+
+  /**
+   * Generate secure refresh token
+   * Uses crypto.randomBytes for cryptographically strong tokens
+   */
+  private generateRefreshToken(): string {
+    return crypto.randomBytes(64).toString('hex');
+  }
+
+  /**
+   * Calculate expiry date for refresh token
+   */
+  private getRefreshTokenExpiry(): Date {
+    // Parse the refresh token expiry (e.g., "7d" -> 7 days)
+    const expiryString = config.jwt.refreshTokenExpiresIn;
+    const match = expiryString.match(/^(\d+)([dhms])$/);
+
+    if (!match) {
+      // Default to 7 days if parsing fails
+      return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    }
+
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+
+    let milliseconds = 0;
+    switch (unit) {
+      case 'd':
+        milliseconds = value * 24 * 60 * 60 * 1000;
+        break;
+      case 'h':
+        milliseconds = value * 60 * 60 * 1000;
+        break;
+      case 'm':
+        milliseconds = value * 60 * 1000;
+        break;
+      case 's':
+        milliseconds = value * 1000;
+        break;
+    }
+
+    return new Date(Date.now() + milliseconds);
   }
 
   /**
@@ -184,29 +263,120 @@ class AuthService {
   }
 
   /**
-   * Get active sessions for user
+   * Refresh access token using refresh token (with rotation)
+   *
+   * @param refreshToken - Current refresh token
+   * @param userAgent - User agent from request
+   * @param ipAddress - IP address from request
+   * @returns New access token and new refresh token
+   * @throws UnauthorizedError if refresh token is invalid or expired
    */
-  async getSessions(_userId: string) {
-    // In a production app, you'd query refresh_tokens table using userId
-    // For now, return mock data
-    return [
-      {
-        id: '1',
-        device: 'Chrome on macOS',
-        lastActive: 'Active now',
-        isCurrent: true,
-      },
-    ];
+  async refreshAccessToken(
+    refreshToken: string,
+    userAgent?: string,
+    ipAddress?: string
+  ): Promise<AuthResponse> {
+    // Find session by refresh token
+    const session = await sessionRepository.findByRefreshToken(refreshToken);
+
+    if (!session) {
+      throw new UnauthorizedError('Invalid refresh token');
+    }
+
+    // Check if token has expired
+    if (session.expiresAt < new Date()) {
+      // Delete expired session
+      await sessionRepository.deleteByRefreshToken(refreshToken);
+      throw new UnauthorizedError('Refresh token has expired');
+    }
+
+    // Get user
+    const user = await userRepository.findById(session.userId);
+    if (!user) {
+      throw new UnauthorizedError('User not found');
+    }
+
+    const safeUser = userRepository.toSafeUser(user);
+
+    // Generate new tokens (rotation)
+    const newAccessToken = this.generateToken(safeUser);
+    const newRefreshToken = this.generateRefreshToken();
+
+    // Update session with new refresh token (rotation)
+    await sessionRepository.updateRefreshToken(
+      refreshToken,
+      newRefreshToken,
+      this.getRefreshTokenExpiry()
+    );
+
+    return {
+      user: safeUser,
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
+      expiresIn: config.jwt.expiresIn,
+    };
   }
 
   /**
-   * Sign out user (invalidate refresh token)
+   * Get active sessions for user
    */
-  async signout(_userId: string): Promise<void> {
-    // In production, you would:
-    // 1. Delete the refresh token from the database using userId
-    // 2. Optionally blacklist the access token
-    // For now, this is a no-op (client clears token)
+  async getSessions(userId: string) {
+    const sessions = await sessionRepository.findAllByUserId(userId);
+
+    return sessions.map((session) => ({
+      id: session.id,
+      device: this.parseUserAgent(session.userAgent),
+      ipAddress: session.ipAddress,
+      lastActive: session.createdAt.toISOString(),
+      expiresAt: session.expiresAt.toISOString(),
+    }));
+  }
+
+  /**
+   * Sign out user from current session (invalidate refresh token)
+   */
+  async signout(refreshToken: string): Promise<void> {
+    try {
+      await sessionRepository.deleteByRefreshToken(refreshToken);
+    } catch (error) {
+      // Session might already be deleted, ignore error
+    }
+  }
+
+  /**
+   * Sign out user from all devices (invalidate all refresh tokens)
+   */
+  async signoutAllDevices(userId: string): Promise<void> {
+    await sessionRepository.deleteAllByUserId(userId);
+  }
+
+  /**
+   * Revoke a specific session
+   */
+  async revokeSession(sessionId: string, userId: string): Promise<void> {
+    const session = await sessionRepository.findAllByUserId(userId);
+    const targetSession = session.find((s) => s.id === sessionId);
+
+    if (!targetSession) {
+      throw new UnauthorizedError('Session not found');
+    }
+
+    await sessionRepository.deleteById(sessionId);
+  }
+
+  /**
+   * Parse user agent string to friendly device name
+   */
+  private parseUserAgent(userAgent?: string | null): string {
+    if (!userAgent) return 'Unknown Device';
+
+    // Simple parsing - in production, use a library like ua-parser-js
+    if (userAgent.includes('Chrome')) return 'Chrome Browser';
+    if (userAgent.includes('Safari')) return 'Safari Browser';
+    if (userAgent.includes('Firefox')) return 'Firefox Browser';
+    if (userAgent.includes('Edge')) return 'Edge Browser';
+
+    return 'Unknown Browser';
   }
 
   /**

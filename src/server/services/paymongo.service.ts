@@ -182,6 +182,30 @@ class PayMongoService {
   }
 
   /**
+   * Retrieve payment link by reference number
+   * Used for payment verification
+   */
+  async getPaymentLinkByReference(referenceNumber: string): Promise<PayMongoLink> {
+    try {
+      const response = await this.client.get<{ data: PayMongoLink }>(
+        `/links`,
+        {
+          params: {
+            reference_number: referenceNumber,
+          },
+        }
+      );
+      return response.data.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        console.error('PayMongo API Error:', error.response?.data);
+        throw new BadRequestError('Failed to retrieve payment link by reference number');
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Generate unique reference number
    * Format: RG-{timestamp}
    */

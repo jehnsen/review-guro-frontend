@@ -109,21 +109,25 @@ export interface PracticeLimitsResponse {
   remainingToday: number;
 }
 
-// Token management
+// Token management (DEPRECATED - tokens now stored in httpOnly cookies)
+// These functions are kept for user data storage only, not for tokens
 export function getAccessToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem("reviewguro_token");
+  // SECURITY FIX: Tokens are now in httpOnly cookies, not localStorage
+  // This function is deprecated and should not be used for token storage
+  return null;
 }
 
-export function setAccessToken(token: string): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem("reviewguro_token", token);
+export function setAccessToken(_token: string): void {
+  // SECURITY FIX: Tokens are now in httpOnly cookies, not localStorage
+  // This function is deprecated and does nothing
+  // Tokens are automatically set by the server via Set-Cookie header
 }
 
 export function removeAccessToken(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem("reviewguro_token");
+  // Remove user data from localStorage
   localStorage.removeItem("reviewguro_user");
+  // Token is removed via logout endpoint which clears the httpOnly cookie
 }
 
 export function getStoredUser(): AuthUser | null {
@@ -154,22 +158,18 @@ async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getAccessToken();
-
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     ...options.headers,
   };
-
-  if (token) {
-    (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-  }
 
   let response: Response;
   try {
     response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       headers,
+      // SECURITY FIX: Include credentials to send httpOnly cookies with requests
+      credentials: 'include',
     });
   } catch (error) {
     // Network error - server unreachable
@@ -248,8 +248,9 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     });
 
-    if (response.success && response.data.accessToken) {
-      setAccessToken(response.data.accessToken);
+    // SECURITY FIX: Token is now in httpOnly cookie set by server
+    // Only store user data in localStorage for quick access
+    if (response.success && response.data.user) {
       setStoredUser(response.data.user);
     }
 
@@ -262,8 +263,9 @@ export const authApi = {
       body: JSON.stringify({ email, password }),
     });
 
-    if (response.success && response.data.accessToken) {
-      setAccessToken(response.data.accessToken);
+    // SECURITY FIX: Token is now in httpOnly cookie set by server
+    // Only store user data in localStorage for quick access
+    if (response.success && response.data.user) {
       setStoredUser(response.data.user);
     }
 
@@ -802,13 +804,10 @@ export const profileApi = {
     const formData = new FormData();
     formData.append("photo", file);
 
-    const token = getAccessToken();
-
+    // SECURITY FIX: Use cookie-based auth instead of Authorization header
     const response = await fetch(`${API_BASE_URL}/users/profile/photo`, {
       method: "POST",
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      credentials: 'include', // Send httpOnly cookie
       body: formData,
     });
 
