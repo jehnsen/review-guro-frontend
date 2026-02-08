@@ -9,6 +9,8 @@ import { QuestionCategory } from '@prisma/client';
 export interface DashboardMetrics {
   totalQuestions: number;
   accuracy: number;
+  practiceQuestions: number;
+  mockExamQuestions: number;
   studyTime: {
     hours: number;
     minutes: number;
@@ -34,6 +36,8 @@ export interface WeeklyActivityData {
     questionsAttempted: number;
     correctAnswers: number;
     accuracy: number;
+    practiceQuestions: number;
+    mockExamQuestions: number;
   }>;
 }
 
@@ -87,21 +91,22 @@ export interface TimeTracking {
 
 export class AnalyticsService {
   /**
-   * Get dashboard overview metrics
+   * Get dashboard overview metrics - combines practice and mock exam stats
    */
   async getDashboardMetrics(userId: string): Promise<DashboardMetrics> {
-    const [totalQuestions, accuracy, studyTimeMinutes, streak, mockExamStats] =
+    const [combinedStats, studyTimeMinutes, streak, mockExamStats] =
       await Promise.all([
-        analyticsRepository.getTotalQuestionsAttempted(userId),
-        analyticsRepository.getOverallAccuracy(userId),
+        analyticsRepository.getCombinedStats(userId),
         analyticsRepository.getTotalStudyTimeMinutes(userId),
         analyticsRepository.getStudyStreak(userId),
         analyticsRepository.getMockExamStats(userId),
       ]);
 
     return {
-      totalQuestions,
-      accuracy,
+      totalQuestions: combinedStats.totalQuestions,
+      accuracy: combinedStats.accuracy,
+      practiceQuestions: combinedStats.practiceQuestions,
+      mockExamQuestions: combinedStats.mockExamQuestions,
       studyTime: {
         hours: Math.floor(studyTimeMinutes / 60),
         minutes: studyTimeMinutes % 60,
@@ -121,7 +126,7 @@ export class AnalyticsService {
   }
 
   /**
-   * Get weekly activity data
+   * Get weekly activity data - includes both practice and mock exams
    */
   async getWeeklyActivity(userId: string): Promise<WeeklyActivityData> {
     const weeklyData = await analyticsRepository.getWeeklyActivity(userId);
@@ -136,6 +141,8 @@ export class AnalyticsService {
         questionsAttempted: day.questionsAttempted,
         correctAnswers: day.correctAnswers,
         accuracy: day.accuracy,
+        practiceQuestions: day.practiceQuestions,
+        mockExamQuestions: day.mockExamQuestions,
       };
     });
 
@@ -331,8 +338,8 @@ export class AnalyticsService {
     dashboard: DashboardMetrics;
     weeklyActivity: WeeklyActivityData;
     strengthsWeaknesses: StrengthsWeaknessesData;
-    performance: CategoryPerformance[];
-    insights: AIInsights;
+    performanceByCategory: CategoryPerformance[];
+    aiInsights: AIInsights;
     streak: StreakData;
     timeTracking: TimeTracking;
   }> {
@@ -340,8 +347,8 @@ export class AnalyticsService {
       dashboard,
       weeklyActivity,
       strengthsWeaknesses,
-      performance,
-      insights,
+      performanceByCategory,
+      aiInsights,
       streak,
       timeTracking,
     ] = await Promise.all([
@@ -358,8 +365,8 @@ export class AnalyticsService {
       dashboard,
       weeklyActivity,
       strengthsWeaknesses,
-      performance,
-      insights,
+      performanceByCategory,
+      aiInsights,
       streak,
       timeTracking,
     };

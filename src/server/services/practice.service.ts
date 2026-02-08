@@ -87,10 +87,9 @@ class PracticeService {
       pointsEarned,
     });
 
-    // Increment daily practice count for free tier users
-    if (!accessLimits.canAccessPremiumFeatures) {
-      await dailyAnalyticsRepository.incrementTodayCount(userId);
-    }
+    // Increment daily practice count for analytics (all users)
+    // Limit enforcement is handled above, but we track all activity for analytics
+    await dailyAnalyticsRepository.incrementTodayCount(userId);
 
     // Update user's streak (activity tracking)
     await streakService.updateStreak(userId);

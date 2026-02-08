@@ -211,6 +211,13 @@ export default function AnalyticsPage() {
             <p className="text-sm text-slate-500 dark:text-slate-400">
               Total Questions
             </p>
+            {dashboard && (dashboard.practiceQuestions || dashboard.mockExamQuestions) && (
+              <div className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                {dashboard.practiceQuestions ? `${dashboard.practiceQuestions} practice` : ""}
+                {dashboard.practiceQuestions && dashboard.mockExamQuestions ? " • " : ""}
+                {dashboard.mockExamQuestions ? `${dashboard.mockExamQuestions} mock exam` : ""}
+              </div>
+            )}
           </Card>
 
           <Card>
@@ -372,9 +379,16 @@ export default function AnalyticsPage() {
                         <div className="w-full flex items-end justify-center gap-0.5 sm:gap-1 relative group" style={{ height: '140px' }}>
                           {/* Tooltip on hover */}
                           {hasActivity && (
-                            <div className="absolute -top-16 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 shadow-lg">
+                            <div className="absolute -top-20 left-1/2 -translate-x-1/2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-xs px-3 py-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-10 shadow-lg">
                               <div className="font-semibold mb-1">{day.day}</div>
                               <div className="text-blue-300 dark:text-blue-600">Questions: {day.questionsAttempted}</div>
+                              {(day.practiceQuestions !== undefined || day.mockExamQuestions !== undefined) && (
+                                <div className="text-slate-400 dark:text-slate-500 text-[10px]">
+                                  {day.practiceQuestions ? `${day.practiceQuestions} practice` : ""}
+                                  {day.practiceQuestions && day.mockExamQuestions ? " • " : ""}
+                                  {day.mockExamQuestions ? `${day.mockExamQuestions} mock` : ""}
+                                </div>
+                              )}
                               <div className="text-emerald-300 dark:text-emerald-600">Correct: {day.correctAnswers}</div>
                               {day.questionsAttempted > 0 && (
                                 <div className="text-slate-300 dark:text-slate-600 mt-1">

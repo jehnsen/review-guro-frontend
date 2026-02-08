@@ -3,9 +3,8 @@
  * Handles all database operations for Mock Examination sessions
  */
 
-import { PrismaClient, ExamStatus, Difficulty } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { ExamStatus, Difficulty } from '@prisma/client';
+import { prisma } from '../config/database';
 
 export class MockExamRepository {
   /**

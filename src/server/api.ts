@@ -133,7 +133,15 @@ export function removeAccessToken(): void {
 export function getStoredUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
   const user = localStorage.getItem("reviewguro_user");
-  return user ? JSON.parse(user) : null;
+  if (!user) return null;
+
+  try {
+    return JSON.parse(user);
+  } catch {
+    // Clear corrupted storage entry
+    localStorage.removeItem("reviewguro_user");
+    return null;
+  }
 }
 
 export function setStoredUser(user: AuthUser): void {
@@ -582,6 +590,8 @@ export interface StreakResponse {
 export interface DashboardOverview {
   totalQuestions: number;
   accuracy: number;
+  practiceQuestions?: number;
+  mockExamQuestions?: number;
   studyTime: { hours: number; minutes: number };
   streak: StreakResponse;
   mockExams: { total: number; completed: number; averageScore: number; passRate: number };
@@ -593,6 +603,8 @@ export interface WeeklyActivityDay {
   questionsAttempted: number;
   correctAnswers: number;
   accuracy: number;
+  practiceQuestions?: number;
+  mockExamQuestions?: number;
 }
 
 export interface WeeklyActivityResponse {

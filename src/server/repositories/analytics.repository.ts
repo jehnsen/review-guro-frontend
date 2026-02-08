@@ -1,6 +1,7 @@
 /**
  * Analytics Repository Layer
  * Data access for analytics and statistics
+ * Combines data from UserProgress (practice) and MockExamSession (mock exams)
  */
 
 import { prisma } from '../config/database';
@@ -8,7 +9,7 @@ import { QuestionCategory } from '@prisma/client';
 
 export class AnalyticsRepository {
   /**
-   * Get total questions attempted by user
+   * Get total questions attempted by user (practice mode only)
    */
   async getTotalQuestionsAttempted(userId: string): Promise<number> {
     return prisma.userProgress.count({
@@ -17,7 +18,7 @@ export class AnalyticsRepository {
   }
 
   /**
-   * Get total correct answers by user
+   * Get total correct answers by user (practice mode only)
    */
   async getTotalCorrectAnswers(userId: string): Promise<number> {
     return prisma.userProgress.count({
@@ -29,7 +30,7 @@ export class AnalyticsRepository {
   }
 
   /**
-   * Get user's overall accuracy
+   * Get user's overall accuracy (practice mode only)
    */
   async getOverallAccuracy(userId: string): Promise<number> {
     const total = await this.getTotalQuestionsAttempted(userId);
@@ -40,16 +41,89 @@ export class AnalyticsRepository {
   }
 
   /**
-   * Get total study time in minutes from UserProgress attempts
+   * Get total study time in minutes from UserProgress attempts and mock exams
    */
   async getTotalStudyTimeMinutes(userId: string): Promise<number> {
-    // Estimate: Average 1.5 minutes per question attempt
-    const totalQuestions = await this.getTotalQuestionsAttempted(userId);
-    return Math.round(totalQuestions * 1.5);
+    // Get practice time (estimate 1.5 min per question)
+    const practiceQuestions = await this.getTotalQuestionsAttempted(userId);
+    const practiceTime = Math.round(practiceQuestions * 1.5);
+
+    // Get mock exam time from completed exams
+    const completedExams = await prisma.mockExamSession.findMany({
+      where: {
+        userId,
+        status: 'COMPLETED',
+        completedAt: { not: null },
+      },
+      select: {
+        startedAt: true,
+        completedAt: true,
+        timeLimitMinutes: true,
+      },
+    });
+
+    const mockExamTime = completedExams.reduce((total, exam) => {
+      if (exam.completedAt && exam.startedAt) {
+        const timeSpent = Math.floor(
+          (exam.completedAt.getTime() - exam.startedAt.getTime()) / (1000 * 60)
+        );
+        return total + Math.min(timeSpent, exam.timeLimitMinutes);
+      }
+      return total;
+    }, 0);
+
+    return practiceTime + mockExamTime;
   }
 
   /**
-   * Get weekly activity (last 7 days)
+   * Get combined stats from both practice and mock exams
+   */
+  async getCombinedStats(userId: string): Promise<{
+    totalQuestions: number;
+    correctAnswers: number;
+    accuracy: number;
+    practiceQuestions: number;
+    mockExamQuestions: number;
+  }> {
+    // Get practice stats
+    const practiceQuestions = await this.getTotalQuestionsAttempted(userId);
+    const practiceCorrect = await this.getTotalCorrectAnswers(userId);
+
+    // Get mock exam stats
+    const completedExams = await prisma.mockExamSession.findMany({
+      where: {
+        userId,
+        status: 'COMPLETED',
+      },
+      select: {
+        totalQuestions: true,
+        correctAnswers: true,
+      },
+    });
+
+    const mockExamQuestions = completedExams.reduce(
+      (sum, exam) => sum + exam.totalQuestions,
+      0
+    );
+    const mockExamCorrect = completedExams.reduce(
+      (sum, exam) => sum + (exam.correctAnswers || 0),
+      0
+    );
+
+    const totalQuestions = practiceQuestions + mockExamQuestions;
+    const totalCorrect = practiceCorrect + mockExamCorrect;
+
+    return {
+      totalQuestions,
+      correctAnswers: totalCorrect,
+      accuracy: totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0,
+      practiceQuestions,
+      mockExamQuestions,
+    };
+  }
+
+  /**
+   * Get weekly activity (last 7 days) - combines practice and mock exams
    */
   async getWeeklyActivity(userId: string): Promise<
     Array<{
@@ -57,12 +131,15 @@ export class AnalyticsRepository {
       questionsAttempted: number;
       correctAnswers: number;
       accuracy: number;
+      practiceQuestions: number;
+      mockExamQuestions: number;
     }>
   > {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const attempts = await prisma.userProgress.findMany({
+    // Get practice attempts
+    const practiceAttempts = await prisma.userProgress.findMany({
       where: {
         userId,
         createdAt: {
@@ -74,33 +151,72 @@ export class AnalyticsRepository {
       },
     });
 
+    // Get mock exam sessions completed in last 7 days
+    const mockExams = await prisma.mockExamSession.findMany({
+      where: {
+        userId,
+        status: 'COMPLETED',
+        completedAt: {
+          gte: sevenDaysAgo,
+        },
+      },
+      select: {
+        completedAt: true,
+        totalQuestions: true,
+        correctAnswers: true,
+      },
+    });
+
     // Group by date
-    const dailyStats = new Map<string, { total: number; correct: number }>();
+    const dailyStats = new Map<string, {
+      practiceTotal: number;
+      practiceCorrect: number;
+      mockTotal: number;
+      mockCorrect: number;
+    }>();
 
     // Initialize all 7 days
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
       const dateKey = date.toISOString().split('T')[0];
-      dailyStats.set(dateKey, { total: 0, correct: 0 });
+      dailyStats.set(dateKey, { practiceTotal: 0, practiceCorrect: 0, mockTotal: 0, mockCorrect: 0 });
     }
 
-    // Populate with actual data
-    attempts.forEach((attempt) => {
+    // Populate with practice data
+    practiceAttempts.forEach((attempt) => {
       const dateKey = attempt.createdAt.toISOString().split('T')[0];
       const stats = dailyStats.get(dateKey);
       if (stats) {
-        stats.total++;
-        if (attempt.isCorrect) stats.correct++;
+        stats.practiceTotal++;
+        if (attempt.isCorrect) stats.practiceCorrect++;
       }
     });
 
-    return Array.from(dailyStats.entries()).map(([date, stats]) => ({
-      date,
-      questionsAttempted: stats.total,
-      correctAnswers: stats.correct,
-      accuracy: stats.total > 0 ? Math.round((stats.correct / stats.total) * 100) : 0,
-    }));
+    // Populate with mock exam data
+    mockExams.forEach((exam) => {
+      if (exam.completedAt) {
+        const dateKey = exam.completedAt.toISOString().split('T')[0];
+        const stats = dailyStats.get(dateKey);
+        if (stats) {
+          stats.mockTotal += exam.totalQuestions;
+          stats.mockCorrect += exam.correctAnswers || 0;
+        }
+      }
+    });
+
+    return Array.from(dailyStats.entries()).map(([date, stats]) => {
+      const total = stats.practiceTotal + stats.mockTotal;
+      const correct = stats.practiceCorrect + stats.mockCorrect;
+      return {
+        date,
+        questionsAttempted: total,
+        correctAnswers: correct,
+        accuracy: total > 0 ? Math.round((correct / total) * 100) : 0,
+        practiceQuestions: stats.practiceTotal,
+        mockExamQuestions: stats.mockTotal,
+      };
+    });
   }
 
   /**
@@ -178,14 +294,15 @@ export class AnalyticsRepository {
   }
 
   /**
-   * Get user's study streak (consecutive days)
+   * Get user's study streak (consecutive days) - includes both practice and mock exams
    */
   async getStudyStreak(userId: string): Promise<{
     currentStreak: number;
     longestStreak: number;
     lastActivityDate: string | null;
   }> {
-    const attempts = await prisma.userProgress.findMany({
+    // Get practice attempt dates
+    const practiceAttempts = await prisma.userProgress.findMany({
       where: { userId },
       orderBy: {
         createdAt: 'desc',
@@ -195,7 +312,28 @@ export class AnalyticsRepository {
       },
     });
 
-    if (attempts.length === 0) {
+    // Get mock exam completion dates
+    const mockExams = await prisma.mockExamSession.findMany({
+      where: {
+        userId,
+        status: 'COMPLETED',
+        completedAt: { not: null },
+      },
+      orderBy: {
+        completedAt: 'desc',
+      },
+      select: {
+        completedAt: true,
+      },
+    });
+
+    // Combine all activity dates
+    const allDates: Date[] = [
+      ...practiceAttempts.map((a) => a.createdAt),
+      ...mockExams.filter((e) => e.completedAt).map((e) => e.completedAt as Date),
+    ];
+
+    if (allDates.length === 0) {
       return {
         currentStreak: 0,
         longestStreak: 0,
@@ -203,10 +341,13 @@ export class AnalyticsRepository {
       };
     }
 
+    // Sort by date descending
+    allDates.sort((a, b) => b.getTime() - a.getTime());
+
     // Get unique dates
     const uniqueDates = new Set<string>();
-    attempts.forEach((attempt) => {
-      uniqueDates.add(attempt.createdAt.toISOString().split('T')[0]);
+    allDates.forEach((date) => {
+      uniqueDates.add(date.toISOString().split('T')[0]);
     });
 
     const sortedDates = Array.from(uniqueDates).sort().reverse();
@@ -236,7 +377,7 @@ export class AnalyticsRepository {
     }
 
     // Calculate longest streak
-    let longestStreak = 1;
+    let longestStreak = sortedDates.length > 0 ? 1 : 0;
     let tempStreak = 1;
 
     for (let i = 1; i < sortedDates.length; i++) {
@@ -257,7 +398,7 @@ export class AnalyticsRepository {
     return {
       currentStreak,
       longestStreak: Math.max(longestStreak, currentStreak),
-      lastActivityDate: attempts[0].createdAt.toISOString(),
+      lastActivityDate: allDates[0].toISOString(),
     };
   }
 
