@@ -30,11 +30,13 @@ import {
   MockExamQuestion,
   MockExamResultData,
   DetailedExamResults,
+  QuestionnaireStatus,
   categoryDisplayNames,
 } from "@/server/api";
 import { useAuth } from "@/contexts/AuthContext";
 
 type ExamState = "setup" | "in-progress" | "review" | "completed";
+type ExamMode = "questionnaire" | "mixed";
 
 interface ExamConfig {
   totalQuestions: number;
@@ -95,6 +97,11 @@ export default function MockExamPage() {
   const [isLoadingResults, setIsLoadingResults] = useState(false);
   const [isCheckingActiveExam, setIsCheckingActiveExam] = useState(true);
 
+  // Exam mode state
+  const [examMode, setExamMode] = useState<ExamMode>("questionnaire");
+  const [selectedQuestionnaire, setSelectedQuestionnaire] = useState<number>(1);
+  const [questionnaireStatuses, setQuestionnaireStatuses] = useState<QuestionnaireStatus[]>([]);
+
   // Free tier limits state
   const [examsUsedThisMonth, setExamsUsedThisMonth] = useState(0);
   const [isLoadingLimits, setIsLoadingLimits] = useState(!isPremium);
@@ -129,25 +136,32 @@ export default function MockExamPage() {
 
   const currentQuestion = questions[currentQuestionIndex];
 
-  // Fetch mock exam limits for free users
+  // Fetch mock exam limits and questionnaire statuses
   useEffect(() => {
-    async function fetchLimits() {
-      if (!isAuthenticated || authLoading || isPremium) return;
+    async function fetchLimitsAndStatuses() {
+      if (!isAuthenticated || authLoading) return;
 
-      setIsLoadingLimits(true);
+      if (!isPremium) setIsLoadingLimits(true);
       try {
-        const response = await mockExamApi.getLimits();
-        if (response.data) {
-          setExamsUsedThisMonth(response.data.examsUsedThisMonth);
+        const [limitsRes, statusRes] = await Promise.all([
+          isPremium ? Promise.resolve(null) : mockExamApi.getLimits(),
+          mockExamApi.getQuestionnaireStatus(),
+        ]);
+
+        if (limitsRes?.data) {
+          setExamsUsedThisMonth(limitsRes.data.examsUsedThisMonth);
+        }
+        if (statusRes?.data) {
+          setQuestionnaireStatuses(statusRes.data);
         }
       } catch (error) {
-        console.error("Error fetching mock exam limits:", error);
+        console.error("Error fetching mock exam data:", error);
       } finally {
         setIsLoadingLimits(false);
       }
     }
 
-    fetchLimits();
+    fetchLimitsAndStatuses();
   }, [isAuthenticated, authLoading, isPremium]);
 
   // Check for in-progress exam on page load
@@ -200,10 +214,11 @@ export default function MockExamPage() {
     setIsStarting(true);
     try {
       const response = await mockExamApi.createExam({
-        totalQuestions: config.totalQuestions,
-        timeLimitMinutes: config.timeLimitMinutes,
+        totalQuestions: examMode === "questionnaire" ? 170 : config.totalQuestions,
+        timeLimitMinutes: examMode === "questionnaire" ? 170 : config.timeLimitMinutes,
         passingScore: config.passingScore,
         categories: "MIXED",
+        ...(examMode === "questionnaire" && { questionnaireNumber: selectedQuestionnaire }),
       });
 
       if (response.data) {
@@ -572,41 +587,130 @@ export default function MockExamPage() {
           <Card className="mb-6">
             <CardTitle className="mb-4">Exam Configuration</CardTitle>
             <div className="space-y-6">
-              {/* Question Count Selector */}
+              {/* Exam Mode Selector */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-                  Number of Questions {!isPremium && `(Max ${FREE_TIER_MAX_QUESTIONS} for free users)`}
+                  Exam Mode
                 </label>
-                <div className={`grid gap-2 ${isPremium ? 'grid-cols-4' : 'grid-cols-3'}`}>
-                  {questionOptions.map((num) => (
-                    <button
-                      key={num}
-                      onClick={() => {
-                        const timeOption = TIME_OPTIONS.find((t) => t.questions === num);
-                        setConfig({
-                          ...config,
-                          totalQuestions: num,
-                          timeLimitMinutes: timeOption?.time || num * 1.2,
-                        });
-                      }}
-                      className={`py-3 px-4 rounded-lg text-sm font-medium transition-all ${
-                        config.totalQuestions === num
-                          ? "bg-blue-600 text-white"
-                          : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
-                      }`}
-                    >
-                      {num}
-                    </button>
-                  ))}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setExamMode("questionnaire")}
+                    className={`py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      examMode === "questionnaire"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    <div className="font-semibold">Questionnaire</div>
+                    <div className={`text-xs mt-0.5 ${examMode === "questionnaire" ? "text-blue-100" : "text-slate-500 dark:text-slate-400"}`}>
+                      170 questions from a set template
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setExamMode("mixed")}
+                    className={`py-3 px-4 rounded-lg text-sm font-medium transition-all text-left ${
+                      examMode === "mixed"
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                    }`}
+                  >
+                    <div className="font-semibold">Mixed Random</div>
+                    <div className={`text-xs mt-0.5 ${examMode === "mixed" ? "text-blue-100" : "text-slate-500 dark:text-slate-400"}`}>
+                      Custom count with CSC distribution
+                    </div>
+                  </button>
                 </div>
               </div>
+
+              {/* Questionnaire Selector (only for questionnaire mode) */}
+              {examMode === "questionnaire" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Select Questionnaire
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {Array.from({ length: 7 }, (_, i) => i + 1).map((num) => {
+                      const status = questionnaireStatuses.find((s) => s.questionnaireNumber === num);
+                      return (
+                        <button
+                          key={num}
+                          onClick={() => setSelectedQuestionnaire(num)}
+                          className={`relative py-3 px-4 rounded-lg text-sm font-medium transition-all ${
+                            selectedQuestionnaire === num
+                              ? "bg-blue-600 text-white"
+                              : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                          }`}
+                        >
+                          <div>Set {num}</div>
+                          {status?.completed && (
+                            <div className={`text-xs mt-0.5 ${
+                              selectedQuestionnaire === num ? "text-blue-100" : "text-emerald-600 dark:text-emerald-400"
+                            }`}>
+                              Best: {status.bestScore}%
+                            </div>
+                          )}
+                          {status?.attempts === 0 && (
+                            <div className={`text-xs mt-0.5 ${
+                              selectedQuestionnaire === num ? "text-blue-100" : "text-slate-400 dark:text-slate-500"
+                            }`}>
+                              Not attempted
+                            </div>
+                          )}
+                          {status?.completed && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center">
+                              <CheckCircle2 size={10} className="text-white" />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Question Count Selector (only for mixed mode) */}
+              {examMode === "mixed" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
+                    Number of Questions {!isPremium && `(Max ${FREE_TIER_MAX_QUESTIONS} for free users)`}
+                  </label>
+                  <div className={`grid gap-2 ${isPremium ? 'grid-cols-4' : 'grid-cols-3'}`}>
+                    {questionOptions.map((num) => (
+                      <button
+                        key={num}
+                        onClick={() => {
+                          const timeOption = TIME_OPTIONS.find((t) => t.questions === num);
+                          setConfig({
+                            ...config,
+                            totalQuestions: num,
+                            timeLimitMinutes: timeOption?.time || num * 1.2,
+                          });
+                        }}
+                        className={`py-3 px-4 rounded-lg text-sm font-medium transition-all ${
+                          config.totalQuestions === num
+                            ? "bg-blue-600 text-white"
+                            : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700"
+                        }`}
+                      >
+                        {num}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Summary */}
               <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-3">
                 <div className="flex items-center justify-between">
+                  <span className="text-slate-600 dark:text-slate-400">Questions</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">
+                    {examMode === "questionnaire" ? "170 (full set)" : config.totalQuestions}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
                   <span className="text-slate-600 dark:text-slate-400">Time Limit</span>
                   <span className="font-semibold text-slate-900 dark:text-white">
-                    {config.timeLimitMinutes} {config.timeLimitMinutes === 1 ? 'minute' : 'minutes'}
+                    {examMode === "questionnaire" ? "170 minutes" : `${config.timeLimitMinutes} ${config.timeLimitMinutes === 1 ? 'minute' : 'minutes'}`}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
@@ -616,9 +720,9 @@ export default function MockExamPage() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-600 dark:text-slate-400">Categories</span>
+                  <span className="text-slate-600 dark:text-slate-400">Mode</span>
                   <span className="font-semibold text-slate-900 dark:text-white">
-                    Mixed (All Categories)
+                    {examMode === "questionnaire" ? `Questionnaire Set ${selectedQuestionnaire}` : "Mixed (CSC Distribution)"}
                   </span>
                 </div>
               </div>

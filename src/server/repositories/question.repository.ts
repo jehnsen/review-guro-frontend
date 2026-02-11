@@ -348,12 +348,15 @@ class QuestionRepository {
    * Map raw SQL row to Question type
    */
   private mapRawToQuestion(row: Record<string, unknown>): Question {
+    // Parse options properly whether it's a string or already parsed
+    const rawOptions = typeof row.options === 'string' ? JSON.parse(row.options) : row.options;
+
     return {
       id: String(row.id),
       category: String(row.category) as QuestionCategory,
       difficulty: String(row.difficulty) as Difficulty,
       questionText: String(row.question_text),
-      options: typeof row.options === 'string' ? JSON.parse(row.options) : row.options,
+      options: rawOptions,
       correctOptionId: String(row.correct_option_id),
       explanationText: row.explanation_text ? String(row.explanation_text) : null,
       aiExplanation: row.ai_explanation ? String(row.ai_explanation) : null,
@@ -372,6 +375,14 @@ class QuestionRepository {
     }
 
     return options.map((opt) => {
+      // Handle both object and non-object cases
+      if (typeof opt !== 'object' || opt === null) {
+        return {
+          id: '',
+          text: String(opt ?? ''),
+        };
+      }
+
       const option = opt as { id?: string; text?: string };
       return {
         id: String(option.id ?? ''),

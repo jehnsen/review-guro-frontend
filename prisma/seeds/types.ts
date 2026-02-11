@@ -17,7 +17,7 @@ export function q(
   correctIndex: number,
   explanationText: string
 ): SeedQuestion {
-  const ids = ['opt-1', 'opt-2', 'opt-3', 'opt-4'];
+  const ids = ['A', 'B', 'C', 'D'];
   return {
     category,
     difficulty,

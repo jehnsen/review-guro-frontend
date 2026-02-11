@@ -422,6 +422,20 @@ export const practiceApi = {
       body: JSON.stringify({ questionIds }),
     });
   },
+
+  async getSmartQuestions(params: GetQuestionsParams = {}): Promise<ApiResponse<Question[]>> {
+    const searchParams = new URLSearchParams();
+
+    if (params.limit) searchParams.set("limit", params.limit.toString());
+    if (params.category) searchParams.set("category", params.category);
+    if (params.difficulty) searchParams.set("difficulty", params.difficulty);
+    if (params.questionnaireNumber) searchParams.set("questionnaireNumber", params.questionnaireNumber.toString());
+
+    const queryString = searchParams.toString();
+    const endpoint = `/practice/questions${queryString ? `?${queryString}` : ""}`;
+
+    return fetchApi<ApiResponse<Question[]>>(endpoint);
+  },
 };
 
 // ==================== MOCK EXAM TYPES ====================
@@ -442,6 +456,7 @@ export interface CreateMockExamRequest {
   passingScore: number;
   categories: "MIXED" | Question["category"][];
   difficulty?: Question["difficulty"];
+  questionnaireNumber?: number;
 }
 
 export interface MockExamData {
@@ -546,6 +561,13 @@ export interface MockExamLimitsResponse {
   remainingExamsThisMonth: number;
 }
 
+export interface QuestionnaireStatus {
+  questionnaireNumber: number;
+  completed: boolean;
+  bestScore: number | null;
+  attempts: number;
+}
+
 // Mock Exam API
 export const mockExamApi = {
   async createExam(params: CreateMockExamRequest): Promise<ApiResponse<MockExamData>> {
@@ -613,6 +635,10 @@ export const mockExamApi = {
 
   async getLimits(): Promise<ApiResponse<MockExamLimitsResponse>> {
     return fetchApi<ApiResponse<MockExamLimitsResponse>>("/mock-exams/limits");
+  },
+
+  async getQuestionnaireStatus(): Promise<ApiResponse<QuestionnaireStatus[]>> {
+    return fetchApi<ApiResponse<QuestionnaireStatus[]>>("/mock-exams/questionnaire-status");
   },
 };
 

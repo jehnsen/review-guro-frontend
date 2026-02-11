@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -19,7 +19,6 @@ import {
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge } from "@/components/ui";
 import {
-  questionsApi,
   practiceApi,
   Question,
   CategoryProgress,
@@ -97,10 +96,19 @@ export default function PracticeLandingPage() {
     fetchLimits();
   }, [isAuthenticated, authLoading, isPremium]);
 
-  useEffect(() => {
-    async function fetchData() {
-      if (!isAuthenticated) return;
+  const hasFetchedRef = useRef(false);
 
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) return;
+    if (hasFetchedRef.current) {
+      // Already fetched — just make sure we're not stuck loading
+      setIsLoading(false);
+      return;
+    }
+
+    hasFetchedRef.current = true;
+
+    async function fetchData() {
       setIsLoading(true);
       setError(null);
 
@@ -109,7 +117,7 @@ export default function PracticeLandingPage() {
         const [progressResponse, ...questionResponses] = await Promise.all([
           practiceApi.getProgressByCategories().catch(() => null),
           ...categories.map((category) =>
-            questionsApi.getQuestions({ category, limit: 10 }).catch(() => ({ data: [] }))
+            practiceApi.getSmartQuestions({ category, limit: 10 }).catch(() => ({ data: [] }))
           ),
         ]);
 
@@ -142,9 +150,7 @@ export default function PracticeLandingPage() {
       }
     }
 
-    if (!authLoading) {
-      fetchData();
-    }
+    fetchData();
   }, [isAuthenticated, authLoading]);
 
   // Get first question from any category for quick start

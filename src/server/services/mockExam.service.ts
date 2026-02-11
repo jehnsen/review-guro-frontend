@@ -3,13 +3,14 @@
  * Business logic for Mock Examination sessions
  */
 
-import { Difficulty, QuestionCategory, ExamStatus } from '@prisma/client';
+import { Difficulty, QuestionCategory, ExamStatus, Question } from '@prisma/client';
 import { mockExamRepository } from '../repositories/mockExam.repository';
 import { questionRepository } from '../repositories/question.repository';
 import { userRepository } from '../repositories/user.repository';
 import { BadRequestError, NotFoundError, ForbiddenError } from '../utils/errors';
 import {
   CreateMockExamDTO,
+  CSC_CATEGORY_DISTRIBUTION,
   MockExamResponse,
   MockExamResultsResponse,
   MockExamHistoryResponse,
@@ -79,24 +80,43 @@ export class MockExamService {
       throw new BadRequestError('Passing score must be between 0 and 100');
     }
 
-    // Build question filters
-    const filters: {
-      categories?: QuestionCategory[];
-      difficulty?: Difficulty;
-    } = {};
+    // Fetch questions using 3-mode logic
+    let questions: Question[];
 
-    if (dto.categories !== 'MIXED' && Array.isArray(dto.categories)) {
-      filters.categories = dto.categories;
+    if (dto.questionnaireNumber) {
+      // MODE 1: Questionnaire template — serve all questions from that questionnaire, shuffled
+      questions = await questionRepository.findByQuestionnaire(dto.questionnaireNumber);
+
+      // Free users get capped to their max question limit
+      if (questions.length > maxQuestions) {
+        questions = questions.slice(0, maxQuestions);
+      }
+    } else if (dto.categories === 'MIXED') {
+      // MODE 2: Random with CSC distribution guarantee
+      questions = await questionRepository.findRandomWithDistribution(
+        dto.totalQuestions,
+        CSC_CATEGORY_DISTRIBUTION,
+        { difficulty: dto.difficulty }
+      );
+    } else {
+      // MODE 3: Category-specific (existing behavior)
+      const filters: {
+        categories?: QuestionCategory[];
+        difficulty?: Difficulty;
+      } = {};
+
+      if (Array.isArray(dto.categories)) {
+        filters.categories = dto.categories;
+      }
+
+      if (dto.difficulty) {
+        filters.difficulty = dto.difficulty;
+      }
+
+      questions = await questionRepository.findRandom(dto.totalQuestions, filters);
     }
 
-    if (dto.difficulty) {
-      filters.difficulty = dto.difficulty;
-    }
-
-    // Fetch questions from database
-    const questions = await questionRepository.findRandom(dto.totalQuestions, filters);
-
-    if (questions.length < dto.totalQuestions) {
+    if (questions.length < dto.totalQuestions && !dto.questionnaireNumber) {
       throw new BadRequestError(
         `Not enough questions available. Found ${questions.length}, requested ${dto.totalQuestions}`
       );
@@ -105,13 +125,23 @@ export class MockExamService {
     // Store question IDs in exam record
     const questionIds = questions.map((q) => q.id);
 
+    // Determine categories string for storage
+    let categoriesStr: string;
+    if (dto.questionnaireNumber) {
+      categoriesStr = `QUESTIONNAIRE_${dto.questionnaireNumber}`;
+    } else if (typeof dto.categories === 'string') {
+      categoriesStr = dto.categories;
+    } else {
+      categoriesStr = JSON.stringify(dto.categories);
+    }
+
     // Create exam session
     const exam = await mockExamRepository.create({
       userId,
-      totalQuestions: dto.totalQuestions,
+      totalQuestions: questions.length, // Use actual count (may differ for questionnaire mode)
       timeLimitMinutes: dto.timeLimitMinutes,
       passingScore: dto.passingScore,
-      categories: typeof dto.categories === 'string' ? dto.categories : JSON.stringify(dto.categories),
+      categories: categoriesStr,
       difficulty: dto.difficulty,
       questions: questionIds, // Pass array directly, Prisma handles Json serialization
     });
@@ -700,6 +730,50 @@ export class MockExamService {
       examsUsedThisMonth: examsThisMonth.length,
       remainingExamsThisMonth,
     };
+  }
+
+  /**
+   * Get questionnaire completion status for all 7 questionnaires
+   * Shows whether the user has completed each, their best score, and attempt count
+   */
+  async getQuestionnaireCompletionStatus(userId: string): Promise<
+    Array<{
+      questionnaireNumber: number;
+      completed: boolean;
+      bestScore: number | null;
+      attempts: number;
+    }>
+  > {
+    const allExams = await mockExamRepository.findByUserId(userId);
+
+    // Filter exams that are questionnaire-based
+    const questionnaireExams = allExams.filter((exam) =>
+      exam.categories.startsWith('QUESTIONNAIRE_')
+    );
+
+    // Build status for all 7 questionnaires
+    return Array.from({ length: 7 }, (_, i) => {
+      const qNum = i + 1;
+      const exams = questionnaireExams.filter(
+        (exam) => exam.categories === `QUESTIONNAIRE_${qNum}`
+      );
+
+      const completedExams = exams.filter(
+        (exam) => exam.status === ExamStatus.COMPLETED && exam.score !== null
+      );
+
+      const bestScore =
+        completedExams.length > 0
+          ? Math.max(...completedExams.map((e) => e.score!))
+          : null;
+
+      return {
+        questionnaireNumber: qNum,
+        completed: completedExams.length > 0,
+        bestScore,
+        attempts: exams.length,
+      };
+    });
   }
 }
 

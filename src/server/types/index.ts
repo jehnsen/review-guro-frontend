@@ -231,7 +231,20 @@ export interface CreateMockExamDTO {
   passingScore: number;
   categories: QuestionCategory[] | 'MIXED';
   difficulty?: Difficulty;
+  questionnaireNumber?: number;
 }
+
+/**
+ * CSC exam category distribution weights (out of 170 total)
+ * Used for MIXED mock exams to guarantee realistic proportions
+ */
+export const CSC_CATEGORY_DISTRIBUTION: Record<QuestionCategory, number> = {
+  VERBAL_ABILITY: 40,
+  NUMERICAL_ABILITY: 40,
+  ANALYTICAL_ABILITY: 30,
+  GENERAL_INFORMATION: 30,
+  CLERICAL_ABILITY: 30,
+};
 
 export interface MockExamSession {
   id: string;

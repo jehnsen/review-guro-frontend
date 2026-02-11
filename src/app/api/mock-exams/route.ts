@@ -23,6 +23,7 @@ const createMockExamSchema = z.object({
     z.literal('MIXED')
   ]),
   difficulty: z.nativeEnum(Difficulty).optional(),
+  questionnaireNumber: z.number().min(1).max(7).optional(),
 });
 
 async function postHandler(request: AuthenticatedRequest) {

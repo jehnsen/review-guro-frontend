@@ -164,7 +164,7 @@ export default function PracticePage() {
     }
     return 0;
   });
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDailyLimitModal, setShowDailyLimitModal] = useState(false);
   const [tutorState, setTutorState] = useState<TutorState>({
@@ -227,6 +227,9 @@ export default function PracticePage() {
   // Use ref to persist answered questions across navigation without causing re-renders
   const answeredQuestionsRef = useRef<Record<string, AnsweredQuestion>>(getInitialAnswers());
 
+  // Track if we're currently fetching to prevent infinite loops
+  const isFetchingRef = useRef(false);
+
   // Sync ref with sessionStorage whenever storageKey changes (e.g., when category changes)
   useEffect(() => {
     const stored = sessionStorage.getItem(storageKey);
@@ -241,42 +244,50 @@ export default function PracticePage() {
     }
   }, [storageKey]);
 
-  // Track what category we already fetched
-  const fetchedCategoryRef = useRef<string | null>(null);
-  const questionsRef = useRef<Question[]>([]);
+  // Track last fetched category to prevent refetching same data
+  const lastFetchedCategoryRef = useRef<string | null>(null);
 
-  // Load questions — ONE fetch per category, period.
+  // Load questions - only fetch ONCE on mount or when category changes
   useEffect(() => {
-    if (!isAuthenticated || authLoading) return;
+    // Early exit if not authenticated or already fetching
+    if (!isAuthenticated || authLoading || isFetchingRef.current) return;
 
-    const categoryKey = categoryFilter || 'ALL';
+    const currentCategoryKey = categoryFilter || 'ALL';
 
-    // If we already fetched for this category, just reuse the cached data
-    if (fetchedCategoryRef.current === categoryKey && questionsRef.current.length > 0) {
-      return;
+    // Check if we already have data for this category
+    if (lastFetchedCategoryRef.current === currentCategoryKey && allQuestions.length > 0) {
+      return; // Already have data, don't refetch
     }
 
-    fetchedCategoryRef.current = categoryKey;
+    // If we reach here, we need to fetch
+    const abortController = new AbortController();
 
-    async function doFetch() {
+    async function fetchQuestions() {
+      // Double-check before starting fetch (race condition protection)
+      if (isFetchingRef.current) return;
+
+      isFetchingRef.current = true;
+      lastFetchedCategoryRef.current = currentCategoryKey;
       setIsLoading(true);
 
       try {
+        // Use smart questions API — server handles priority ordering and tier limits
         const response = await practiceApi.getSmartQuestions({
           category: categoryFilter || undefined,
           limit: 50,
         });
 
-        const questions = response.data || [];
-        questionsRef.current = questions;
+        if (abortController.signal.aborted) return;
 
-        if (questions.length > 0) {
-          // Fetch answered progress
+        if (response.data && response.data.length > 0) {
+          const limitedQuestions = response.data;
+
+          // Fetch user's answered progress from backend to restore state
           try {
-            const questionIds = questions.map(q => q.id);
+            const questionIds = limitedQuestions.map(q => q.id);
             const progressResponse = await practiceApi.getAnsweredQuestions(questionIds);
 
-            if (progressResponse.data && progressResponse.data.length > 0) {
+            if (!abortController.signal.aborted && progressResponse.data && progressResponse.data.length > 0) {
               for (const progress of progressResponse.data) {
                 if (!answeredQuestionsRef.current[progress.questionId]) {
                   answeredQuestionsRef.current[progress.questionId] = {
@@ -294,36 +305,55 @@ export default function PracticePage() {
             console.error("Error fetching answered progress:", error);
           }
 
-          setAllQuestions(questions);
+          if (!abortController.signal.aborted) {
+            setAllQuestions(limitedQuestions);
 
-          const currentQ = questions.find((q) => q.id === questionId) || questions[0];
-          setQuestion(currentQ);
-
-          if (currentQ.id !== questionId) {
-            router.replace(`/practice/${currentQ.id}${categoryFilter ? `?category=${categoryFilter}` : ""}`);
+            // Set first question if current questionId not in results
+            const currentQ = limitedQuestions.find((q) => q.id === questionId);
+            if (currentQ) {
+              setQuestion(currentQ);
+            } else {
+              // Redirect to first question
+              const firstQ = limitedQuestions[0];
+              setQuestion(firstQ);
+              setTimeout(() => {
+                router.replace(`/practice/${firstQ.id}${categoryFilter ? `?category=${categoryFilter}` : ""}`);
+              }, 0);
+            }
           }
         }
       } catch (error) {
-        console.error("Error fetching questions:", error);
+        if (!abortController.signal.aborted) {
+          console.error("Error fetching questions:", error);
+        }
       } finally {
-        setIsLoading(false);
+        if (!abortController.signal.aborted) {
+          setIsLoading(false);
+          isFetchingRef.current = false;
+        }
       }
     }
 
-    doFetch();
+    fetchQuestions();
+
+    // Cleanup function to abort fetch if component unmounts or deps change
+    return () => {
+      abortController.abort();
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated, authLoading, categoryFilter]);
 
-  // Handle question navigation — just pick from already-loaded questions
+  // Handle question navigation (when questionId changes in URL)
+  // Only update current question, NEVER fetch or redirect
   useEffect(() => {
-    if (questionsRef.current.length > 0 && questionId) {
-      const currentQ = questionsRef.current.find((q) => q.id === questionId);
-      if (currentQ) {
+    if (allQuestions.length > 0 && questionId && !isFetchingRef.current) {
+      const currentQ = allQuestions.find((q) => q.id === questionId);
+      if (currentQ && (!question || question.id !== currentQ.id)) {
         setQuestion(currentQ);
         setIsLoading(false);
       }
     }
-  }, [questionId]);
+  }, [questionId, allQuestions, question]);
 
   // Reset or restore state when question changes
   useEffect(() => {

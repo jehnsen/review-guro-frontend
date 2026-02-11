@@ -3,7 +3,7 @@
  * Business logic for practice sessions and answer submissions
  */
 
-import { QuestionCategory } from '@prisma/client';
+import { QuestionCategory, Difficulty } from '@prisma/client';
 import { questionRepository } from '../repositories/question.repository';
 import { progressRepository } from '../repositories/progress.repository';
 import { dailyAnalyticsRepository } from '../repositories/dailyPracticeUsage.repository';
@@ -19,6 +19,7 @@ import {
   ExplainResponse,
   TutorChatRequestDTO,
   TutorChatResponse,
+  QuestionResponse,
   CategoryProgressResponse,
   CategoryProgress,
 } from '../types';
@@ -272,6 +273,53 @@ class PracticeService {
       overallStats,
     };
   }
+  /**
+   * Get smart practice questions for a user
+   * Uses 3-tier priority: unanswered > incorrect > correct, randomized within tiers
+   * Server-side limit enforcement based on user tier
+   */
+  async getSmartQuestions(
+    userId: string,
+    filters: {
+      category?: QuestionCategory;
+      difficulty?: Difficulty;
+      questionnaireNumber?: number;
+      limit?: number;
+    }
+  ): Promise<QuestionResponse[]> {
+    const user = await userRepository.findById(userId);
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    const accessLimits = getUserAccessLimits(user);
+
+    // Cap limit based on tier: free = 15, premium = up to 50
+    const requestedLimit = filters.limit ?? 15;
+    const maxLimit = accessLimits.canAccessPremiumFeatures ? 50 : 15;
+    const cappedLimit = Math.min(requestedLimit, maxLimit);
+
+    const questions = await questionRepository.findSmartPracticeQuestions(
+      userId,
+      cappedLimit,
+      {
+        category: filters.category,
+        difficulty: filters.difficulty,
+        questionnaireNumber: filters.questionnaireNumber,
+      }
+    );
+
+    // Transform to QuestionResponse (hide correct answers)
+    return questions.map((q) => ({
+      id: q.id,
+      category: q.category,
+      difficulty: q.difficulty,
+      questionText: q.questionText,
+      options: questionRepository.parseOptions(q.options),
+      questionnaireNumber: q.questionnaireNumber,
+    }));
+  }
+
   /**
    * Get user's answered questions for a list of question IDs
    * Used to restore practice state when returning to practice mode
