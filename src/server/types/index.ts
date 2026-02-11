@@ -99,6 +99,7 @@ export interface QuestionOption {
 export interface QuestionFilters {
   category?: QuestionCategory;
   difficulty?: Difficulty;
+  questionnaireNumber?: number;
   page?: number;
   limit?: number;
   tags?: string[];
@@ -110,6 +111,7 @@ export interface QuestionResponse {
   difficulty: Difficulty;
   questionText: string;
   options: QuestionOption[];
+  questionnaireNumber?: number;
   correctOptionId?: string; // Only included for completed attempts
   explanationText?: string | null;
   aiExplanation?: string;
@@ -152,6 +154,21 @@ export interface ExplainResponse {
   explanation: string;
   source: 'database' | 'cache' | 'ai_generated';
   remainingExplanations?: number;
+}
+
+export interface TutorChatMessageDTO {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface TutorChatRequestDTO {
+  questionId: string;
+  message: string;
+  conversationHistory: TutorChatMessageDTO[];
+}
+
+export interface TutorChatResponse {
+  reply: string;
 }
 
 export interface HintRequestDTO {

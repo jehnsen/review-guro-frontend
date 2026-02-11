@@ -17,6 +17,8 @@ import {
   SubmitAnswerResponse,
   ExplainRequestDTO,
   ExplainResponse,
+  TutorChatRequestDTO,
+  TutorChatResponse,
   CategoryProgressResponse,
   CategoryProgress,
 } from '../types';
@@ -166,6 +168,25 @@ class PracticeService {
   }
 
   /**
+   * Chat with AI tutor about a specific question
+   * Sends the user's message along with question context and conversation history
+   */
+  async chatWithTutor(dto: TutorChatRequestDTO): Promise<TutorChatResponse> {
+    const { questionId, message, conversationHistory } = dto;
+
+    const question = await questionRepository.findById(questionId);
+    if (!question) {
+      throw new NotFoundError('Question not found');
+    }
+
+    const result = await aiService.chat(question, message, conversationHistory);
+
+    return {
+      reply: result.reply,
+    };
+  }
+
+  /**
    * Get user's practice statistics
    */
   async getUserStats(userId: string): Promise<{
@@ -250,6 +271,47 @@ class PracticeService {
       categories,
       overallStats,
     };
+  }
+  /**
+   * Get user's answered questions for a list of question IDs
+   * Used to restore practice state when returning to practice mode
+   */
+  async getAnsweredQuestions(
+    userId: string,
+    questionIds: string[]
+  ): Promise<Array<{
+    questionId: string;
+    selectedOptionId: string;
+    isCorrect: boolean;
+    correctOptionId: string;
+    explanation: string | null;
+    isFlagged: boolean;
+  }>> {
+    if (questionIds.length === 0) return [];
+
+    // Get user progress for these questions
+    const progressEntries = await progressRepository.findByUserAndQuestions(userId, questionIds);
+
+    if (progressEntries.length === 0) return [];
+
+    // Get question details for correct answers and explanations
+    const answeredIds = progressEntries.map(p => p.questionId);
+    const questions = await questionRepository.findByIds(answeredIds);
+
+    // Build a lookup map for questions
+    const questionMap = new Map(questions.map(q => [q.id, q]));
+
+    return progressEntries.map(progress => {
+      const question = questionMap.get(progress.questionId);
+      return {
+        questionId: progress.questionId,
+        selectedOptionId: progress.selectedOptionId,
+        isCorrect: progress.isCorrect,
+        correctOptionId: question?.correctOptionId ?? '',
+        explanation: question?.explanationText ?? null,
+        isFlagged: progress.isFlagged,
+      };
+    });
   }
 }
 

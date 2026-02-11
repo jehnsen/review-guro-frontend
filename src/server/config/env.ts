@@ -26,6 +26,8 @@ const envSchema = z.object({
 
   // OpenAI
   OPENAI_API_KEY: z.string().optional(),
+  OPENAI_MODEL: z.string().default('gpt-4o-mini'),
+  OPENAI_MAX_TOKENS: z.string().transform(Number).default('500'),
 
   // Cache TTL (in seconds)
   CACHE_TTL_QUESTIONS: z.string().transform(Number).default('3600'),
@@ -94,6 +96,8 @@ export const config = {
   },
   openai: {
     apiKey: env.OPENAI_API_KEY,
+    model: env.OPENAI_MODEL,
+    maxTokens: env.OPENAI_MAX_TOKENS,
   },
   cache: {
     questionsTTL: env.CACHE_TTL_QUESTIONS,

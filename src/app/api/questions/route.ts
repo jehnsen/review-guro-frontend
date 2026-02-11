@@ -19,11 +19,13 @@ async function handler(request: AuthenticatedRequest) {
     // Get filters
     const category = searchParams.get('category') as QuestionCategory | null;
     const difficulty = searchParams.get('difficulty') as Difficulty | null;
+    const questionnaireNumber = searchParams.get('questionnaireNumber');
 
     // Get questions
     const { result: data, cached, cacheKey } = await questionService.getQuestions({
       category: category || undefined,
       difficulty: difficulty || undefined,
+      questionnaireNumber: questionnaireNumber ? parseInt(questionnaireNumber, 10) : undefined,
       page,
       limit,
     });

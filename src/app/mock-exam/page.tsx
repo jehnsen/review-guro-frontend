@@ -320,7 +320,6 @@ export default function MockExamPage() {
   // Navigation
   const goToQuestion = (index: number) => {
     setCurrentQuestionIndex(index);
-    setShowNavigator(false);
   };
 
   const goNext = () => {

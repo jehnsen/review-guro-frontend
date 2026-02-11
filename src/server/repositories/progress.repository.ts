@@ -179,6 +179,35 @@ class ProgressRepository {
   }
 
   /**
+   * Find progress for multiple questions by a user
+   * Returns progress entries for a list of question IDs
+   */
+  async findByUserAndQuestions(
+    userId: string,
+    questionIds: string[]
+  ): Promise<Array<{
+    questionId: string;
+    selectedOptionId: string;
+    isCorrect: boolean;
+    isFlagged: boolean;
+  }>> {
+    const entries = await prisma.userProgress.findMany({
+      where: {
+        userId,
+        questionId: { in: questionIds },
+      },
+      select: {
+        questionId: true,
+        selectedOptionId: true,
+        isCorrect: true,
+        isFlagged: true,
+      },
+    });
+
+    return entries;
+  }
+
+  /**
    * Get available questions count per category
    */
   async getAvailableQuestionsByCategory(): Promise<Array<{

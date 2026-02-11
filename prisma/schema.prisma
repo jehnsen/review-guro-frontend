@@ -126,6 +126,7 @@ model Question {
   correctOptionId String           @map("correct_option_id")
   explanationText String?          @map("explanation_text") @db.Text
   aiExplanation   String?          @map("ai_explanation") @db.Text
+  questionnaireNumber Int          @default(1) @map("questionnaire_number")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -136,6 +137,8 @@ model Question {
   @@index([category])
   @@index([difficulty])
   @@index([category, difficulty])
+  @@index([questionnaireNumber])
+  @@index([questionnaireNumber, category])
   @@map("questions")
 }
 

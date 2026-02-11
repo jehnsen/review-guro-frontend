@@ -49,6 +49,7 @@ class QuestionService {
     const normalizedFilters: QuestionFilters = {
       category: filters.category,
       difficulty: filters.difficulty,
+      questionnaireNumber: filters.questionnaireNumber,
       page: filters.page ?? 1,
       limit: Math.min(filters.limit ?? 10, 100), // Cap at 100 per page
     };
@@ -174,6 +175,7 @@ class QuestionService {
       difficulty: question.difficulty,
       questionText: question.questionText,
       options: questionRepository.parseOptions(question.options),
+      questionnaireNumber: question.questionnaireNumber,
     };
   }
 
@@ -187,6 +189,7 @@ class QuestionService {
       difficulty: question.difficulty,
       questionText: question.questionText,
       options: questionRepository.parseOptions(question.options),
+      questionnaireNumber: question.questionnaireNumber,
       correctOptionId: question.correctOptionId,
       explanationText: question.explanationText,
     };

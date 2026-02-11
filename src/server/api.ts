@@ -45,6 +45,7 @@ export interface Question {
   difficulty: "EASY" | "MEDIUM" | "HARD";
   questionText: string;
   options: QuestionOption[];
+  questionnaireNumber?: number;
   hint?: string;
 }
 
@@ -65,6 +66,15 @@ export interface ExplanationResponse {
 export interface HintResponse {
   questionId: string;
   hint: string;
+}
+
+export interface TutorChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface TutorChatResponse {
+  reply: string;
 }
 
 export interface UserStats {
@@ -108,6 +118,15 @@ export interface PracticeLimitsResponse {
   dailyLimit: number;
   usedToday: number;
   remainingToday: number;
+}
+
+export interface AnsweredQuestionProgress {
+  questionId: string;
+  selectedOptionId: string;
+  isCorrect: boolean;
+  correctOptionId: string;
+  explanation: string | null;
+  isFlagged: boolean;
 }
 
 // Token management (DEPRECATED - tokens now stored in httpOnly cookies)
@@ -316,6 +335,7 @@ export interface GetQuestionsParams {
   limit?: number;
   category?: Question["category"];
   difficulty?: Question["difficulty"];
+  questionnaireNumber?: number;
 }
 
 export const questionsApi = {
@@ -326,6 +346,7 @@ export const questionsApi = {
     if (params.limit) searchParams.set("limit", params.limit.toString());
     if (params.category) searchParams.set("category", params.category);
     if (params.difficulty) searchParams.set("difficulty", params.difficulty);
+    if (params.questionnaireNumber) searchParams.set("questionnaireNumber", params.questionnaireNumber.toString());
 
     const queryString = searchParams.toString();
     const endpoint = `/questions${queryString ? `?${queryString}` : ""}`;
@@ -364,6 +385,17 @@ export const practiceApi = {
     });
   },
 
+  async chatWithTutor(
+    questionId: string,
+    message: string,
+    conversationHistory: TutorChatMessage[]
+  ): Promise<ApiResponse<TutorChatResponse>> {
+    return fetchApi<ApiResponse<TutorChatResponse>>("/practice/chat", {
+      method: "POST",
+      body: JSON.stringify({ questionId, message, conversationHistory }),
+    });
+  },
+
   async getStats(): Promise<ApiResponse<UserStats>> {
     return fetchApi<ApiResponse<UserStats>>("/practice/stats");
   },
@@ -382,6 +414,13 @@ export const practiceApi = {
 
   async getLimits(): Promise<ApiResponse<PracticeLimitsResponse>> {
     return fetchApi<ApiResponse<PracticeLimitsResponse>>("/practice/limits");
+  },
+
+  async getAnsweredQuestions(questionIds: string[]): Promise<ApiResponse<AnsweredQuestionProgress[]>> {
+    return fetchApi<ApiResponse<AnsweredQuestionProgress[]>>("/practice/progress/questions", {
+      method: "POST",
+      body: JSON.stringify({ questionIds }),
+    });
   },
 };
 

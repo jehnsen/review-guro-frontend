@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import React from "react";
 import {
   ArrowLeft,
   Flag,
@@ -62,6 +63,55 @@ interface AnsweredQuestion {
 
 // Free users are limited to 15 questions per category
 const FREE_QUESTION_LIMIT = 15;
+
+/**
+ * Renders simple markdown (bold, italic, line breaks) as React elements.
+ * Handles **bold**, *italic*, and newlines.
+ */
+function renderSimpleMarkdown(text: string): React.ReactNode {
+  const lines = text.split('\n');
+  return lines.map((line, lineIdx) => {
+    // Split by bold (**text**) and italic (*text*) patterns
+    const parts: React.ReactNode[] = [];
+    let remaining = line;
+    let key = 0;
+
+    while (remaining.length > 0) {
+      // Match **bold**
+      const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+      if (boldMatch && boldMatch.index !== undefined) {
+        if (boldMatch.index > 0) {
+          parts.push(remaining.substring(0, boldMatch.index));
+        }
+        parts.push(<strong key={`b${key++}`}>{boldMatch[1]}</strong>);
+        remaining = remaining.substring(boldMatch.index + boldMatch[0].length);
+        continue;
+      }
+
+      // Match *italic* (but not **)
+      const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
+      if (italicMatch && italicMatch.index !== undefined) {
+        if (italicMatch.index > 0) {
+          parts.push(remaining.substring(0, italicMatch.index));
+        }
+        parts.push(<em key={`i${key++}`}>{italicMatch[1]}</em>);
+        remaining = remaining.substring(italicMatch.index + italicMatch[0].length);
+        continue;
+      }
+
+      // No more matches
+      parts.push(remaining);
+      break;
+    }
+
+    return (
+      <React.Fragment key={lineIdx}>
+        {lineIdx > 0 && <br />}
+        {parts}
+      </React.Fragment>
+    );
+  });
+}
 
 export default function PracticePage() {
   const params = useParams();
@@ -127,6 +177,14 @@ export default function PracticePage() {
     isTyping: false,
   });
   const [chatInput, setChatInput] = useState("");
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll chat to bottom when messages change or AI is typing
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [tutorState.messages, tutorState.isTyping]);
 
   // Explanation view tracking for free users (taste test: first 3 per day are free)
   const [explanationsViewedToday, setExplanationsViewedToday] = useState(0);
@@ -207,6 +265,32 @@ export default function PracticePage() {
               ? response.data
               : response.data.slice(0, FREE_QUESTION_LIMIT);
 
+            // Fetch user's answered progress from backend to restore state
+            // This ensures answers persist across page navigations, tab refreshes, etc.
+            try {
+              const questionIds = limitedQuestions.map(q => q.id);
+              const progressResponse = await practiceApi.getAnsweredQuestions(questionIds);
+
+              if (progressResponse.data && progressResponse.data.length > 0) {
+                for (const progress of progressResponse.data) {
+                  // Only populate if not already in sessionStorage (sessionStorage is more recent)
+                  if (!answeredQuestionsRef.current[progress.questionId]) {
+                    answeredQuestionsRef.current[progress.questionId] = {
+                      selectedOption: progress.selectedOptionId,
+                      answerState: progress.isCorrect ? "correct" : "incorrect",
+                      correctOptionId: progress.correctOptionId,
+                      explanation: progress.explanation || "",
+                      isFlagged: progress.isFlagged,
+                    };
+                  }
+                }
+                // Sync merged data back to sessionStorage
+                sessionStorage.setItem(storageKey, JSON.stringify(answeredQuestionsRef.current));
+              }
+            } catch (error) {
+              console.error("Error fetching answered progress:", error);
+            }
+
             setAllQuestions(limitedQuestions);
 
             // Find the current question
@@ -262,13 +346,12 @@ export default function PracticePage() {
         setAnswerState(previousAnswer.answerState);
         setCorrectOptionId(previousAnswer.correctOptionId);
         setIsFlagged(previousAnswer.isFlagged || false);
-        // Only show explanation if it's already unlocked or user is premium
-        const shouldShowExplanation = isPremium || unlockedExplanations.has(question.id);
+        // Show explanation card if there is one (blur/lock overlay handles free user access)
         setTutorState({
           showHint: false,
           hintText: "",
-          showExplanation: shouldShowExplanation,
-          explanation: shouldShowExplanation ? previousAnswer.explanation : "",
+          showExplanation: !!previousAnswer.explanation,
+          explanation: previousAnswer.explanation || "",
           messages: [],
           isTyping: false,
         });
@@ -505,20 +588,32 @@ export default function PracticePage() {
       timestamp: new Date().toISOString(),
     };
 
+    const updatedMessages = [...tutorState.messages, userMessage];
+
     setTutorState((prev) => ({
       ...prev,
-      messages: [...prev.messages, userMessage],
+      messages: updatedMessages,
       isTyping: true,
     }));
     setChatInput("");
 
-    // Get AI explanation for the question
     try {
-      const response = await practiceApi.getExplanation(question.id);
+      // Build conversation history from existing messages (excluding the new one)
+      const conversationHistory = tutorState.messages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }));
+
+      const response = await practiceApi.chatWithTutor(
+        question.id,
+        chatInput,
+        conversationHistory
+      );
+
       const aiMessage: TutorMessage = {
         id: `msg-${Date.now()}`,
         role: "assistant",
-        content: response.data?.explanation || "I can help you understand this question better. The key is to analyze each option carefully and apply the relevant concepts.",
+        content: response.data?.reply || "I can help you understand this question better. Could you rephrase your question?",
         timestamp: new Date().toISOString(),
       };
 
@@ -531,7 +626,7 @@ export default function PracticePage() {
       const aiMessage: TutorMessage = {
         id: `msg-${Date.now()}`,
         role: "assistant",
-        content: "I'm here to help! Let me explain this concept. Focus on the key details in the question and eliminate obviously incorrect options first.",
+        content: "Sorry, I couldn't process your question right now. Please try again in a moment.",
         timestamp: new Date().toISOString(),
       };
 
@@ -1033,7 +1128,7 @@ export default function PracticePage() {
 
                 {/* Chat Messages */}
                 {tutorState.messages.length > 0 && (
-                  <div className="space-y-4 mb-4 max-h-64 overflow-y-auto">
+                  <div ref={chatContainerRef} className="space-y-4 mb-4 max-h-64 overflow-y-auto scroll-smooth">
                     {tutorState.messages.map((msg) => (
                       <div
                         key={msg.id}
@@ -1042,13 +1137,15 @@ export default function PracticePage() {
                         }`}
                       >
                         <div
-                          className={`max-w-[85%] p-3 rounded-xl text-sm whitespace-pre-line ${
+                          className={`max-w-[85%] p-3 rounded-xl text-sm ${
                             msg.role === "user"
-                              ? "bg-blue-600 text-white rounded-br-none"
+                              ? "bg-blue-600 text-white rounded-br-none whitespace-pre-line"
                               : "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-bl-none"
                           }`}
                         >
-                          {msg.content}
+                          {msg.role === "assistant"
+                            ? renderSimpleMarkdown(msg.content)
+                            : msg.content}
                         </div>
                       </div>
                     ))}
@@ -1107,7 +1204,8 @@ export default function PracticePage() {
                     ].map((suggestion) => (
                       <button
                         key={suggestion}
-                        className="text-xs px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                        disabled={tutorState.isTyping}
+                        className="text-xs px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => {
                           setChatInput(suggestion);
                         }}

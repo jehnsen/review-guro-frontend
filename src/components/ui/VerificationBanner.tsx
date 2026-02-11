@@ -63,8 +63,8 @@ export function VerificationBanner({ email, onDismiss }: VerificationBannerProps
   }
 
   return (
-    <div className="bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
-      <div className="max-w-7xl mx-auto px-4 py-3">
+    <div className="-mx-4 lg:-mx-8 -mt-4 lg:-mt-8 mb-4 lg:mb-8 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-800">
+      <div className="px-4 lg:px-8 py-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
