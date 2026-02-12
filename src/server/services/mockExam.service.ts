@@ -234,10 +234,17 @@ export class MockExamService {
     // Fetch full question details
     const questions = await questionRepository.findByIds(questionIds);
 
-    // Sort questions to match original order
-    const orderedQuestions = questionIds.map((id) =>
-      questions.find((q) => q.id === id)!
-    );
+    // Sort questions to match original order and filter out any missing questions
+    const orderedQuestions = questionIds
+      .map((id) => questions.find((q) => q.id === id))
+      .filter((q): q is NonNullable<typeof q> => q !== undefined && q !== null);
+
+    // If questions are missing, log a warning
+    if (orderedQuestions.length !== questionIds.length) {
+      console.warn(
+        `Mock exam ${examId}: ${questionIds.length - orderedQuestions.length} questions not found in database`
+      );
+    }
 
     // Map to response format (hide correct answers during exam)
     const questionResponses: QuestionResponse[] = orderedQuestions.map((q) => ({
@@ -453,32 +460,42 @@ export class MockExamService {
     let incorrectCount = 0;
     let unansweredCount = 0;
 
-    const answerDetails = questionIds.map((qId) => {
-      const question = questions.find((q) => q.id === qId)!;
-      const userAnswer = userAnswers[qId];
+    const answerDetails = questionIds
+      .map((qId) => {
+        const question = questions.find((q) => q.id === qId);
 
-      let isCorrect = false;
-      if (userAnswer) {
-        isCorrect = userAnswer === question.correctOptionId;
-        if (isCorrect) {
-          correctCount++;
-        } else {
-          incorrectCount++;
+        // Skip if question not found
+        if (!question) {
+          console.warn(`Question ${qId} not found during exam submission`);
+          unansweredCount++;
+          return null;
         }
-      } else {
-        unansweredCount++;
-      }
 
-      return {
-        questionId: qId,
-        questionText: question.questionText,
-        selectedOptionId: userAnswer || null,
-        correctOptionId: question.correctOptionId,
-        isCorrect,
-        options: questionRepository.parseOptions(question.options),
-        explanation: question.explanationText || question.aiExplanation || '',
-      };
-    });
+        const userAnswer = userAnswers[qId];
+
+        let isCorrect = false;
+        if (userAnswer) {
+          isCorrect = userAnswer === question.correctOptionId;
+          if (isCorrect) {
+            correctCount++;
+          } else {
+            incorrectCount++;
+          }
+        } else {
+          unansweredCount++;
+        }
+
+        return {
+          questionId: qId,
+          questionText: question.questionText,
+          selectedOptionId: userAnswer || null,
+          correctOptionId: question.correctOptionId,
+          isCorrect,
+          options: questionRepository.parseOptions(question.options),
+          explanation: question.explanationText || question.aiExplanation || '',
+        };
+      })
+      .filter((detail): detail is NonNullable<typeof detail> => detail !== null);
 
     const score = Math.round((correctCount / exam.totalQuestions) * 100);
     const passed = score >= exam.passingScore;
@@ -542,29 +559,39 @@ export class MockExamService {
     let incorrectCount = 0;
     let unansweredCount = 0;
 
-    const answerDetails = questionIds.map((qId) => {
-      const question = questions.find((q) => q.id === qId)!;
-      const userAnswer = userAnswers[qId];
+    const answerDetails = questionIds
+      .map((qId) => {
+        const question = questions.find((q) => q.id === qId);
 
-      let isCorrect = false;
-      if (userAnswer) {
-        isCorrect = userAnswer === question.correctOptionId;
-        if (isCorrect) correctCount++;
-        else incorrectCount++;
-      } else {
-        unansweredCount++;
-      }
+        // Skip if question not found
+        if (!question) {
+          console.warn(`Question ${qId} not found when fetching exam results`);
+          unansweredCount++;
+          return null;
+        }
 
-      return {
-        questionId: qId,
-        questionText: question.questionText,
-        selectedOptionId: userAnswer || null,
-        correctOptionId: question.correctOptionId,
-        isCorrect,
-        options: questionRepository.parseOptions(question.options),
-        explanation: question.explanationText || question.aiExplanation || '',
-      };
-    });
+        const userAnswer = userAnswers[qId];
+
+        let isCorrect = false;
+        if (userAnswer) {
+          isCorrect = userAnswer === question.correctOptionId;
+          if (isCorrect) correctCount++;
+          else incorrectCount++;
+        } else {
+          unansweredCount++;
+        }
+
+        return {
+          questionId: qId,
+          questionText: question.questionText,
+          selectedOptionId: userAnswer || null,
+          correctOptionId: question.correctOptionId,
+          isCorrect,
+          options: questionRepository.parseOptions(question.options),
+          explanation: question.explanationText || question.aiExplanation || '',
+        };
+      })
+      .filter((detail): detail is NonNullable<typeof detail> => detail !== null);
 
     // Calculate time spent
     const timeSpentSeconds = exam.completedAt
