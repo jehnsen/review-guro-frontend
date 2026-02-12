@@ -485,7 +485,7 @@ export default function LandingPage() {
       </section>
 
       {/* Testimonials Marquee Section */}
-      <section className="py-20 bg-white dark:bg-slate-900 overflow-hidden">
+      {/* <section className="py-20 bg-white dark:bg-slate-900 overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <AnimatedSection className="text-center mb-12">
             <Badge variant="primary" className="mb-4">
@@ -500,7 +500,7 @@ export default function LandingPage() {
           </AnimatedSection>
         </div>
 
-        {/* Row 1 - Right to Left */}
+        Row 1 - Right to Left
         <div className="marquee-row mb-6 overflow-hidden">
           <div
             className="flex w-max"
@@ -518,7 +518,7 @@ export default function LandingPage() {
                     rating: 5,
                   },
                   {
-                    name: "Juan Dela Cruz",
+                    name: "Reward CAlumpit",
                     role: "LGU Staff",
                     text: "Studying during my commute made all the difference. 30 minutes a day for 2 months and I got 83%!",
                     rating: 5,
@@ -584,7 +584,7 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Row 2 - Left to Right */}
+        Row 2 - Left to Right
         <div className="marquee-row overflow-hidden">
           <div
             className="flex w-max"
@@ -667,7 +667,7 @@ export default function LandingPage() {
             ))}
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Pricing Section */}
       <section id="pricing" className="py-20 bg-white dark:bg-slate-900">
@@ -685,7 +685,7 @@ export default function LandingPage() {
             </p>
           </AnimatedSection>
 
-          <StaggeredContainer className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto" staggerDelay={200}>
+          <StaggeredContainer className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto" staggerDelay={200}>
             {/* Free Tier */}
             <Card className="relative border-2 border-blue-500 dark:border-blue-400">
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -715,11 +715,11 @@ export default function LandingPage() {
               <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
                 <ul className="space-y-3">
                   {[
-                    "Good for testing your current knowledge level.",
+                    // "Good for testing your current knowledge level.",
                     "Daily Questions (20 items/day)",
                     "Basic Score Tracking",
                     "AI Tutor Explanations (3x/day)",
-                    "Mock Exam Simulator (limited)",
+                    "Mock Exam (limited)",
                     "Basic Analytics"
                   ].map((feature) => (
                     <li
@@ -740,7 +740,7 @@ export default function LandingPage() {
             {/* Season Pass */}
             <Card className="relative border-2 border-blue-500 dark:border-blue-400">
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge variant="primary">Most Popular</Badge>
+                <Badge variant="success">Recommended</Badge>
               </div>
               <div className="text-center pt-4">
                 <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">

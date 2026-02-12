@@ -48,21 +48,21 @@ const plans: Plan[] = [
     icon: BookOpen,
     color: "slate",
     features: [
-      { text: "50 practice questions per day", included: true },
+      { text: "20 practice questions per day", included: true },
       { text: "Basic progress tracking", included: true },
       { text: "5 categories access", included: true },
-      { text: "Limited mock exams (1/week)", included: true },
-      { text: "AI Tutor assistance", included: false },
-      { text: "Detailed explanations", included: false },
+      { text: "Limited mock exams (3x per week)", included: true },
+      { text: "Limited AI Tutor assistance", included: true },
+      { text: "3x AI explanations per day", included: true },
       { text: "Performance analytics", included: false },
-      { text: "Ad-free experience", included: false },
+      { text: "Detailed explanations", included: false },
     ],
   },
   {
     id: "season_pass",
     name: "Season Pass",
     description: "Full access for your exam preparation",
-    monthlyPrice: 299,
+    monthlyPrice: 399,
     yearlyPrice: 2499,
     icon: Crown,
     color: "amber",
@@ -75,7 +75,7 @@ const plans: Plan[] = [
       { text: "AI Tutor assistance", included: true },
       { text: "Detailed explanations", included: true },
       { text: "Performance analytics", included: true },
-      { text: "Ad-free experience", included: true },
+      // { text: "Ad-free experience", included: true },
     ],
   },
 ];
@@ -181,7 +181,7 @@ export default function PricingPage() {
           </p>
         </div>
 
-        {/* Billing Toggle */}
+        {/* Billing Toggle 
         <div className="flex items-center justify-center gap-4 mb-10">
           <button
             onClick={() => setBillingPeriod("monthly")}
@@ -206,7 +206,7 @@ export default function PricingPage() {
               Save 30%
             </span>
           </button>
-        </div>
+        </div>*/}
 
         {/* Plans Grid */}
         <div className="grid md:grid-cols-2 gap-8 mb-12">
@@ -265,7 +265,7 @@ export default function PricingPage() {
                     </span>
                     {price > 0 && (
                       <span className="text-slate-500 dark:text-slate-400">
-                        /{billingPeriod === "monthly" ? "month" : "year"}
+                        for {billingPeriod === "monthly" ? "3 months" : "year"}
                       </span>
                     )}
                   </div>
@@ -347,8 +347,8 @@ export default function PricingPage() {
               },
               {
                 icon: Shield,
-                title: "Pass Guarantee",
-                description: "92% of users pass their exam",
+                title: "Advanced Analytics",
+                description: "Detailed insights of your performance",
               },
             ].map((benefit, index) => {
               const Icon = benefit.icon;

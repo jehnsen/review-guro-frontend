@@ -85,7 +85,7 @@ export default function SignInPage() {
             </p>
           </div>
 
-          {/* Test Account Banner */}
+          {/* Test Account Banner 
           <button
             onClick={fillTestCredentials}
             className="w-full mb-6 p-4 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 border border-blue-100 dark:border-blue-800 hover:border-blue-200 dark:hover:border-blue-700 transition-colors group"
@@ -104,7 +104,7 @@ export default function SignInPage() {
               </div>
               <ArrowRight size={16} className="text-slate-400 group-hover:translate-x-1 transition-transform" />
             </div>
-          </button>
+          </button>*/}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
@@ -194,12 +194,12 @@ export default function SignInPage() {
           </div>
         </Card>
 
-        {/* Test credentials hint */}
+        {/* Test credentials hint 
         <div className="mt-6 text-center">
           <p className="text-xs text-slate-500 dark:text-slate-500">
             Test: {TEST_EMAIL} / {TEST_PASSWORD}
           </p>
-        </div>
+        </div>*/}
       </div>
     </div>
     </GuestGuard>
