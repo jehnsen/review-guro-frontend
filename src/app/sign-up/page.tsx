@@ -131,7 +131,7 @@ export default function SignUpPage() {
           </div>
 
           {/* Quick Setup Banner */}
-          <button
+          {/* <button
             onClick={fillDemoCredentials}
             className="w-full mb-6 p-4 rounded-lg bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/20 dark:to-blue-900/20 border border-emerald-100 dark:border-emerald-800 hover:border-emerald-200 dark:hover:border-emerald-700 transition-colors group"
           >
@@ -155,7 +155,7 @@ export default function SignUpPage() {
                 className="text-slate-400 group-hover:translate-x-1 transition-transform"
               />
             </div>
-          </button>
+          </button> */}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
@@ -310,8 +310,8 @@ export default function SignUpPage() {
         {/* Benefits */}
         <div className="mt-8 grid grid-cols-3 gap-4 text-center">
           {[
-            { value: "50K+", label: "Questions" },
-            { value: "92%", label: "Pass Rate" },
+            { value: "100K+", label: "Questions" },
+            { value: "Unlimited", label: "Exam Coverage" },
             { value: "24/7", label: "AI Tutor" },
           ].map((stat) => (
             <div key={stat.label}>
