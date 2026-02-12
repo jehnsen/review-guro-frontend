@@ -27,6 +27,13 @@ class AIService {
   private readonly client: OpenAI | null;
   private readonly isConfigured: boolean;
 
+  /**
+   * Maximum number of conversation history messages to send to OpenAI.
+   * Limits token usage by keeping only the most recent messages (3 turns).
+   * This prevents exponential token costs in long conversations.
+   */
+  private readonly MAX_HISTORY_MESSAGES = 6;
+
   constructor() {
     this.isConfigured = Boolean(config.openai.apiKey);
     this.client = this.isConfigured
@@ -108,6 +115,11 @@ Provide a clear explanation of why the correct answer is right and why the other
       const options = this.parseOptions(question.options);
       const correctOption = options.find(o => o.id === question.correctOptionId);
 
+      // OPTIMIZATION: Limit conversation history to prevent token bleed.
+      // Only keep the last N messages (3 turns) to avoid exponential token costs.
+      // The AI doesn't need full conversation context for question-specific tutoring.
+      const recentHistory = conversationHistory.slice(-this.MAX_HISTORY_MESSAGES);
+
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
         {
           role: 'system',
@@ -129,8 +141,8 @@ Instructions:
 - Use **bold** for emphasis, numbered lists for steps, bullet points for tips
 - For math, use plain text (e.g. "3 × 2/5 = 6/5 = 1.2 kg"), NEVER use LaTeX notation like \\frac, \\times, \\text, \\[ or \\]`,
         },
-        // Include conversation history
-        ...conversationHistory.map(msg => ({
+        // Include only recent conversation history (last 6 messages)
+        ...recentHistory.map(msg => ({
           role: msg.role as 'user' | 'assistant',
           content: msg.content,
         })),
