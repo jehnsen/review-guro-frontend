@@ -25,6 +25,8 @@ import {
   CheckCircle,
   Lightbulb,
   PenTool,
+  ShieldCheck,
+  Repeat,
 } from "lucide-react";
 import { PublicLayout } from "@/components/layout";
 import { Button, Card, Badge } from "@/components/ui";
@@ -294,7 +296,7 @@ export default function LandingPage() {
             {/* Subheadline */}
             <p className="text-lg sm:text-xl text-slate-600 dark:text-slate-300 mb-10 max-w-2xl mx-auto animate-fade-in-up animation-delay-400">
               Pass your Civil Service Exam with our AI tutor that adapts to your
-              learning style. Join 10,000+ Filipinos who leveled up their careers.
+              learning style. Join the new generation of future Civil Servants.
             </p>
 
             {/* CTA Buttons with Animation */}
@@ -323,7 +325,7 @@ export default function LandingPage() {
                     />
                   ))}
                 </div>
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">10,000+ students</span>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">1,000+ Q&As</span>
               </div>
 
               <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 rounded-full shadow-md border border-slate-100 dark:border-slate-700">
@@ -336,12 +338,12 @@ export default function LandingPage() {
                     />
                   ))}
                 </div>
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">4.9/5 rating</span>
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-300">100% Exam Converage</span>
               </div>
 
               <div className="flex items-center gap-2 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-full shadow-md border border-emerald-100 dark:border-emerald-800">
                 <CheckCircle size={16} className="text-emerald-600 dark:text-emerald-400" />
-                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">92% Pass Rate</span>
+                <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Unlimited Mock Retakes</span>
               </div>
             </div>
 
@@ -361,10 +363,10 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <StaggeredContainer className="grid grid-cols-2 lg:grid-cols-4 gap-8" staggerDelay={150}>
             {[
-              { value: "92%", label: "Pass Rate", icon: Trophy },
-              { value: "50K+", label: "Questions", icon: BookOpen },
+              { value: "100%", label: "Exam Coverage", icon: ShieldCheck },
+              { value: "100K+", label: "Questions", icon: BookOpen },
               { value: "24/7", label: "AI Tutor", icon: Brain },
-              { value: "10K+", label: "Students", icon: Users },
+              { value: "Unlimited", label: "Mock Exams", icon: Repeat },
             ].map((stat) => (
               <div key={stat.label} className="text-center">
                 <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/30 mb-4">
@@ -482,6 +484,191 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Testimonials Marquee Section */}
+      <section className="py-20 bg-white dark:bg-slate-900 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <AnimatedSection className="text-center mb-12">
+            <Badge variant="primary" className="mb-4">
+              Testimonials
+            </Badge>
+            <h2 className="text-3xl sm:text-4xl font-bold text-slate-900 dark:text-white mb-4">
+              What Our Reviewees Say
+            </h2>
+            <p className="text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
+              Join hundreds of successful civil servants who passed with ReviewGuro.
+            </p>
+          </AnimatedSection>
+        </div>
+
+        {/* Row 1 - Right to Left */}
+        <div className="marquee-row mb-6 overflow-hidden">
+          <div
+            className="flex w-max"
+            style={{
+              animation: "marquee-left 40s linear infinite",
+            }}
+          >
+            {[...Array(2)].map((_, dupeIndex) => (
+              <div key={dupeIndex} className="flex gap-6 px-3">
+                {[
+                  {
+                    name: "Maria Santos",
+                    role: "Newly Permanent Employee",
+                    text: "I passed on my first try! The AI tutor helped me understand math concepts I've struggled with for years.",
+                    rating: 5,
+                  },
+                  {
+                    name: "Juan Dela Cruz",
+                    role: "LGU Staff",
+                    text: "Studying during my commute made all the difference. 30 minutes a day for 2 months and I got 83%!",
+                    rating: 5,
+                  },
+                  {
+                    name: "Anna Reyes",
+                    role: "Government Intern",
+                    text: "Way better than those expensive review centers. The mock exams felt exactly like the real thing.",
+                    rating: 5,
+                  },
+                  {
+                    name: "Carlo Mendoza",
+                    role: "Municipal Employee",
+                    text: "The AI explanations are next level. It broke down every wrong answer so I actually learned from my mistakes.",
+                    rating: 5,
+                  },
+                  {
+                    name: "Patricia Lim",
+                    role: "Passed Professional Level",
+                    text: "I failed twice before finding ReviewGuro. The smart analytics showed exactly where I was weak. Passed with 85%!",
+                    rating: 5,
+                  },
+                  {
+                    name: "Miguel Torres",
+                    role: "DSWD Staff",
+                    text: "The timed mock exams built my confidence. No more exam anxiety on the actual test day.",
+                    rating: 5,
+                  },
+                ].map((testimonial, index) => (
+                  <div
+                    key={`${dupeIndex}-${index}`}
+                    className="flex-shrink-0 w-[350px] p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700"
+                  >
+                    <div className="flex items-center gap-0.5 mb-3">
+                      {[...Array(testimonial.rating)].map((_, i) => (
+                        <Star
+                          key={i}
+                          size={14}
+                          className="text-amber-400 fill-amber-400"
+                        />
+                      ))}
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 text-sm mb-4 leading-relaxed">
+                      &ldquo;{testimonial.text}&rdquo;
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-semibold">
+                        {testimonial.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {testimonial.name}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {testimonial.role}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Row 2 - Left to Right */}
+        <div className="marquee-row overflow-hidden">
+          <div
+            className="flex w-max"
+            style={{
+              animation: "marquee-right 40s linear infinite",
+            }}
+          >
+            {[...Array(2)].map((_, dupeIndex) => (
+              <div key={dupeIndex} className="flex gap-6 px-3">
+                {[
+                  {
+                    name: "Grace Villanueva",
+                    role: "DepEd Teacher",
+                    text: "Finally, a reviewer that fits my schedule. I studied after putting my kids to sleep and still passed!",
+                    rating: 5,
+                  },
+                  {
+                    name: "Roberto Garcia",
+                    role: "Barangay Staff",
+                    text: "₱399 is nothing compared to the ₱5,000 I wasted on a review center. This is 10x better.",
+                    rating: 5,
+                  },
+                  {
+                    name: "Jasmine Cruz",
+                    role: "Fresh Graduate",
+                    text: "The progress tracking kept me motivated. Seeing my scores improve week by week was so satisfying.",
+                    rating: 5,
+                  },
+                  {
+                    name: "Mark Aquino",
+                    role: "Passed Sub-Professional",
+                    text: "I love that I can retake mock exams unlimited times. By my 5th mock exam, I was consistently scoring 85%+.",
+                    rating: 5,
+                  },
+                  {
+                    name: "Diana Flores",
+                    role: "HR Assistant",
+                    text: "The verbal ability section was my weakness. The AI tutor explained grammar rules in a way that finally clicked.",
+                    rating: 5,
+                  },
+                  {
+                    name: "Kevin Ramos",
+                    role: "Newly Hired Government Employee",
+                    text: "Recommended this to all my colleagues. Three of us passed in the same exam batch thanks to ReviewGuro!",
+                    rating: 5,
+                  },
+                ].map((testimonial, index) => (
+                  <div
+                    key={`${dupeIndex}-${index}`}
+                    className="flex-shrink-0 w-[350px] p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700"
+                  >
+                    <div className="flex items-center gap-0.5 mb-3">
+                      {[...Array(testimonial.rating)].map((_, i) => (
+                        <Star
+                          key={i}
+                          size={14}
+                          className="text-amber-400 fill-amber-400"
+                        />
+                      ))}
+                    </div>
+                    <p className="text-slate-600 dark:text-slate-300 text-sm mb-4 leading-relaxed">
+                      &ldquo;{testimonial.text}&rdquo;
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 flex items-center justify-center text-white text-sm font-semibold">
+                        {testimonial.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                          {testimonial.name}
+                        </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {testimonial.role}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Pricing Section */}
       <section id="pricing" className="py-20 bg-white dark:bg-slate-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -498,7 +685,58 @@ export default function LandingPage() {
             </p>
           </AnimatedSection>
 
-          <StaggeredContainer className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto" staggerDelay={200}>
+          <StaggeredContainer className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto" staggerDelay={200}>
+            {/* Free Tier */}
+            <Card className="relative border-2 border-blue-500 dark:border-blue-400">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                <Badge variant="primary">Free</Badge>
+              </div>
+              <div className="text-center pt-4">
+                <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                  Free Starter
+                </h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                  Limited access to features and question items.
+                </p>
+                <div className="mb-6">
+                  <span className="text-5xl font-bold text-slate-900 dark:text-white">
+                    ₱0
+                  </span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    / forever
+                  </span>
+                </div>
+                <Link href="/dashboard">
+                  <Button fullWidth size="lg">
+                    Get Started Now
+                  </Button>
+                </Link>
+              </div>
+              <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
+                <ul className="space-y-3">
+                  {[
+                    "Good for testing your current knowledge level.",
+                    "Daily Questions (20 items/day)",
+                    "Basic Score Tracking",
+                    "AI Tutor Explanations (3x/day)",
+                    "Mock Exam Simulator (limited)",
+                    "Basic Analytics"
+                  ].map((feature) => (
+                    <li
+                      key={feature}
+                      className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300"
+                    >
+                      <Check
+                        size={18}
+                        className="text-emerald-500 flex-shrink-0"
+                      />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </Card>
+            
             {/* Season Pass */}
             <Card className="relative border-2 border-blue-500 dark:border-blue-400">
               <div className="absolute -top-3 left-1/2 -translate-x-1/2">
@@ -516,7 +754,7 @@ export default function LandingPage() {
                     ₱399
                   </span>
                   <span className="text-slate-500 dark:text-slate-400">
-                    /one-time
+                    / 3 Months (Launch Offer)
                   </span>
                 </div>
                 <Link href="/dashboard">
@@ -528,13 +766,12 @@ export default function LandingPage() {
               <div className="mt-8 pt-8 border-t border-slate-200 dark:border-slate-700">
                 <ul className="space-y-3">
                   {[
-                    "50,000+ practice questions",
+                    "All features in Free Starter",
+                    "1,000+ practice questions",
                     "AI Tutor - unlimited questions",
                     "Detailed explanations",
                     "Progress tracking",
                     "Mock exams with timer",
-                    "Mobile access",
-                    "Valid until you pass",
                   ].map((feature) => (
                     <li
                       key={feature}
@@ -615,24 +852,28 @@ export default function LandingPage() {
           <StaggeredContainer className="space-y-4" staggerDelay={100}>
             {[
               {
-                q: "What exams does ReviewGuro cover?",
-                a: "ReviewGuro covers both Career Service Professional and Sub-Professional examinations, including all major subject areas: Numerical Ability, Verbal Ability, Analytical Ability, General Information, and Clerical Operations.",
+                q: "Why should I pay ₱399 when there are free reviewers on Facebook?",
+                a: "Free reviewers are static PDF files that don't tell you why you're wrong. ReviewGuro is a Personal AI Coach that identifies your weak spots (e.g., Math vs. Logic) and gives you unlimited explanations. You aren't paying for questions; you're paying for the strategy to pass.",
               },
               {
                 q: "How long do I have access after payment?",
-                a: "Your Season Pass gives you unlimited access until you pass your exam. No monthly fees, no hidden charges. Study at your own pace.",
+                a: "Your Season Pass gives you unlimited access for 3 months. Study at your own pace.",
               },
               {
-                q: "Is there a mobile app?",
-                a: "Our web app is fully responsive and works great on all devices. You can study on your phone, tablet, or computer without downloading anything.",
+                q: "I work 8-5. Will this really help me if I only have 30 minutes a day?",
+                a: "Absolutely. You don't need 2 hours. Just open the app for 15 minutes, and our algorithm will serve you the exact questions you need to improve your lowest-scoring areas. It’s designed for commuters and busy employees.",
               },
               {
-                q: "What if I don't pass?",
-                a: "Your access continues until you pass. Plus, our AI tutor will analyze your weak areas and create a personalized improvement plan for your next attempt.",
+                q: "Is the AI Tutor really accurate?",
+                a: "Our AI is strictly prompted to follow Civil Service standards. It doesn't just give answers; it provides step-by-step solutions, especially for Math problems, so you understand the formula, not just the result.",
               },
               {
                 q: "How does the AI Tutor work?",
                 a: "After answering each question, you can ask our AI tutor for clarifications, alternative explanations, or related concepts. It's like having a patient tutor available 24/7.",
+              },
+              {
+                q: "Do I need a laptop to use this?",
+                a: "No. ReviewGuro UI design is fully optimized for web and mobile. You can take a mock exam on the bus, on your lunch break, or in bed. Your progress saves automatically, so you can switch between phone and laptop seamlessly.",
               },
             ].map((faq, index) => (
               <Card key={index} padding="lg">
@@ -659,8 +900,7 @@ export default function LandingPage() {
             Ready to Secure Your Future?
           </h2>
           <p className="text-xl text-blue-100 mb-8">
-            Join thousands of Filipinos who passed their Civil Service Exam with
-            ReviewGuro.
+            The smartest way to secure your 80%+ passing rate.
           </p>
           <Link href="/sign-up">
             <Button

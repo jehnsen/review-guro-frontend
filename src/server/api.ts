@@ -19,6 +19,8 @@ export interface ApiResponse<T> {
 export interface AuthUser {
   id: string;
   email: string;
+  firstName?: string | null;
+  lastName?: string | null;
   role: "USER" | "ADMIN";
   isPremium: boolean;
   premiumExpiry: string | null;

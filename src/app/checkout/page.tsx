@@ -57,6 +57,9 @@ function CheckoutContent() {
     setError("");
     setIsProcessing(true);
 
+    // Store interval ID in a ref so we can clear it on unmount
+    let pollIntervalId: NodeJS.Timeout | null = null;
+
     try {
       // Get current URL for success/cancel redirects
       const baseUrl = window.location.origin;
@@ -73,20 +76,30 @@ function CheckoutContent() {
         window.open(response.data.checkoutUrl, '_blank');
 
         // Poll for payment completion
-        const pollInterval = setInterval(async () => {
+        let pollAttempts = 0;
+        const MAX_POLL_ATTEMPTS = 200; // 200 attempts * 3 seconds = 10 minutes max
+        pollIntervalId = setInterval(async () => {
           try {
+            pollAttempts++;
+
+            // Stop polling after max attempts
+            if (pollAttempts >= MAX_POLL_ATTEMPTS) {
+              if (pollIntervalId) clearInterval(pollIntervalId);
+              setIsProcessing(false);
+              setError("Payment verification timed out. Please check your payment status in your dashboard.");
+              return;
+            }
+
             // Check if user's premium status has been updated
             const profileResponse = await fetch('/api/auth/me', {
-              headers: {
-                'Authorization': `Bearer ${localStorage.getItem('reviewguro_token')}`,
-              },
+              credentials: 'include', // Use httpOnly cookies instead of localStorage
             });
 
             if (profileResponse.ok) {
               const profileData = await profileResponse.json();
               if (profileData.data?.isPremium) {
                 // Payment successful! Stop polling
-                clearInterval(pollInterval);
+                if (pollIntervalId) clearInterval(pollIntervalId);
                 setIsProcessing(false);
                 setPaymentSuccess(true);
 
@@ -98,18 +111,24 @@ function CheckoutContent() {
                   router.push(`/checkout/success?ref=${encodeURIComponent(referenceNumber)}`);
                 }, 2000);
               }
+            } else if (profileResponse.status === 401) {
+              // Authentication failed - stop polling to prevent infinite loop
+              if (pollIntervalId) clearInterval(pollIntervalId);
+              setIsProcessing(false);
+              setError("Authentication expired. Please sign in again and try again.");
             }
           } catch (pollError) {
             console.error('Poll error:', pollError);
+            // Don't stop polling on network errors, but log them
           }
         }, 3000); // Poll every 3 seconds
 
-        // Stop polling after 10 minutes (user probably abandoned)
-        setTimeout(() => {
-          clearInterval(pollInterval);
-          setIsProcessing(false);
-        }, 600000);
-
+        // Cleanup: Clear interval when component unmounts or user navigates away
+        return () => {
+          if (pollIntervalId) {
+            clearInterval(pollIntervalId);
+          }
+        };
       } else {
         setError(response.message || "Failed to create checkout session. Please try again.");
         setIsProcessing(false);

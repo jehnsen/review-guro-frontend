@@ -6,6 +6,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -39,6 +40,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // AUTO-REFRESH: Refresh access token before it expires
   // Access token expires in 15 minutes, refresh at 14 minutes
   const REFRESH_INTERVAL = 14 * 60 * 1000; // 14 minutes in milliseconds
+
+  // Track last refresh attempt to prevent rapid-fire retries
+  const lastRefreshAttempt = useRef<number>(0);
+  const MIN_REFRESH_INTERVAL_MS = 5000; // Minimum 5 seconds between refresh attempts
 
   // Check for existing session on mount
   useEffect(() => {
@@ -213,10 +218,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
-        logout();
+        // Don't call logout if user is already logged out (prevents infinite loops)
+        if (user) {
+          logout();
+        }
       }
     }
-  }, [logout]);
+  }, [logout, user]);
 
   const resendVerificationEmail = useCallback(async () => {
     const response = await fetch('/api/auth/resend-verification', {
@@ -232,6 +240,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // AUTO-REFRESH: Automatically refresh access token before it expires
   const refreshAccessToken = useCallback(async () => {
+    // Prevent rapid-fire refresh attempts (debounce)
+    const now = Date.now();
+    if (now - lastRefreshAttempt.current < MIN_REFRESH_INTERVAL_MS) {
+      console.log('Skipping refresh attempt - too soon after last attempt');
+      return false;
+    }
+    lastRefreshAttempt.current = now;
+
     try {
       const response = await fetch('/api/auth/refresh', {
         method: 'POST',
@@ -247,15 +263,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Refresh failed, logout user
-      await logout();
+      // Refresh failed, logout user only if they were logged in
+      if (user) {
+        await logout();
+      }
       return false;
     } catch (error) {
       console.error('Token refresh failed:', error);
-      await logout();
+      // Only logout if user was actually logged in
+      if (user) {
+        await logout();
+      }
       return false;
     }
-  }, [logout]);
+  }, [logout, user]);
 
   // AUTO-REFRESH: Set up automatic token refresh interval
   // Use user ID as dependency to avoid re-running on every user object change

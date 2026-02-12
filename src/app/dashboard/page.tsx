@@ -100,8 +100,8 @@ export default function DashboardPage() {
     }
   }, [isAuthenticated, authLoading]);
 
-  // Get user display name from email
-  const displayName = user?.email?.split("@")[0] || "Student";
+  // Get user display name - prefer firstName, fallback to email username, then "Student"
+  const displayName = user?.firstName || user?.email?.split("@")[0] || "Student";
 
   if (authLoading || isLoading) {
     return (
