@@ -21,6 +21,9 @@ import {
   Smartphone,
   Loader2,
   Camera,
+  RotateCcw,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import { DashboardLayout } from "@/components/layout";
 import { Button, Card, CardTitle, Badge, Input } from "@/components/ui";
@@ -31,14 +34,16 @@ import {
   settingsApi,
   securityApi,
   subscriptionApi,
+  resetProgressApi,
   UserProfile,
   UserSettings,
   Subscription,
   ThemePreference,
+  ResetProgressType,
   API_BASE_URL,
 } from "@/server/api";
 
-type SettingsTab = "profile" | "preferences" | "notifications" | "subscription" | "security";
+type SettingsTab = "profile" | "preferences" | "notifications" | "subscription" | "security" | "data";
 
 // Helper to get full image URL
 const getImageUrl = (url: string | undefined): string | undefined => {
@@ -88,6 +93,13 @@ export default function SettingsPage() {
 
   // Subscription state
   const [subscription, setSubscription] = useState<Subscription | null>(null);
+
+  // Reset progress state
+  const [resetModalOpen, setResetModalOpen] = useState<ResetProgressType | null>(null);
+  const [resetConfirmText, setResetConfirmText] = useState("");
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // Track if data has been fetched
   const hasFetched = useRef(false);
@@ -285,6 +297,40 @@ export default function SettingsPage() {
     }
   };
 
+  // Reset progress
+  const handleResetProgress = async (type: ResetProgressType) => {
+    if (resetConfirmText.toLowerCase() !== "reset") return;
+
+    setIsResetting(true);
+    setResetError(null);
+    setResetSuccess(null);
+
+    try {
+      const response = await resetProgressApi.resetProgress(type);
+      if (response.success) {
+        const messages: Record<ResetProgressType, string> = {
+          practice: "Practice progress has been reset successfully.",
+          mock_exams: "Mock exam history has been reset successfully.",
+          everything: "All progress data has been reset successfully.",
+        };
+        setResetSuccess(messages[type]);
+        setResetModalOpen(null);
+        setResetConfirmText("");
+      }
+    } catch (error) {
+      setResetError("Failed to reset progress. Please try again.");
+      console.error("Error resetting progress:", error);
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
+  const closeResetModal = () => {
+    setResetModalOpen(null);
+    setResetConfirmText("");
+    setResetError(null);
+  };
+
   // Sign out
   const handleSignOut = async () => {
     try {
@@ -302,6 +348,7 @@ export default function SettingsPage() {
     { id: "notifications" as const, label: "Notifications", icon: Bell },
     { id: "subscription" as const, label: "Subscription", icon: CreditCard },
     { id: "security" as const, label: "Security", icon: Shield },
+    { id: "data" as const, label: "Data", icon: RotateCcw },
   ];
 
   const renderTabContent = () => {
@@ -727,6 +774,183 @@ export default function SettingsPage() {
                 </div>
               </Card>
             </div>
+          </div>
+        );
+
+      case "data":
+        return (
+          <div className="space-y-6">
+            {/* Success Message */}
+            {resetSuccess && (
+              <div className="p-4 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
+                <div className="flex items-center gap-3">
+                  <Check size={20} className="text-emerald-600 dark:text-emerald-400" />
+                  <p className="text-sm font-medium text-emerald-800 dark:text-emerald-200">
+                    {resetSuccess}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Description */}
+            <div>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Reset your learning data. These actions cannot be undone.
+              </p>
+            </div>
+
+            {/* Reset Practice Progress */}
+            <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="font-medium text-slate-900 dark:text-white">
+                    Reset Practice Progress
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Deletes all your practice question answers and daily practice
+                    statistics. Your mock exam history will not be affected.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResetModalOpen("practice")}
+                  className="shrink-0"
+                >
+                  Reset
+                </Button>
+              </div>
+            </div>
+
+            {/* Reset Mock Exam History */}
+            <div className="p-4 rounded-lg border border-slate-200 dark:border-slate-700">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
+                  <h3 className="font-medium text-slate-900 dark:text-white">
+                    Reset Mock Exam History
+                  </h3>
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    Deletes all your mock exam sessions, scores, and results.
+                    Your practice progress will not be affected.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResetModalOpen("mock_exams")}
+                  className="shrink-0"
+                >
+                  Reset
+                </Button>
+              </div>
+            </div>
+
+            {/* Reset Everything */}
+            <div className="pt-6 border-t border-slate-200 dark:border-slate-800">
+              <Card className="border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <AlertTriangle size={16} className="text-rose-600 dark:text-rose-400" />
+                      <h3 className="font-medium text-rose-900 dark:text-rose-100">
+                        Reset Everything
+                      </h3>
+                    </div>
+                    <p className="text-sm text-rose-700 dark:text-rose-300">
+                      Deletes all practice progress, mock exam history, daily
+                      statistics, explanation views, and resets your streak to
+                      zero. This cannot be undone.
+                    </p>
+                  </div>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    onClick={() => setResetModalOpen("everything")}
+                    className="shrink-0"
+                  >
+                    Reset All
+                  </Button>
+                </div>
+              </Card>
+            </div>
+
+            {/* Confirmation Modal */}
+            {resetModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-6 mx-4 max-w-md w-full">
+                  {/* Header */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
+                        <AlertTriangle size={20} className="text-rose-600 dark:text-rose-400" />
+                      </div>
+                      <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+                        Confirm Reset
+                      </h3>
+                    </div>
+                    <button
+                      onClick={closeResetModal}
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    >
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Body */}
+                  <div className="mb-6">
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                      {resetModalOpen === "practice" &&
+                        "This will permanently delete all your practice question answers and daily practice statistics."}
+                      {resetModalOpen === "mock_exams" &&
+                        "This will permanently delete all your mock exam sessions, scores, and results."}
+                      {resetModalOpen === "everything" &&
+                        "This will permanently delete ALL your progress data including practice answers, mock exams, statistics, explanation views, and reset your streak to zero."}
+                    </p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-white mb-2">
+                      Type{" "}
+                      <span className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-rose-600 dark:text-rose-400">
+                        reset
+                      </span>{" "}
+                      to confirm:
+                    </p>
+                    <input
+                      type="text"
+                      value={resetConfirmText}
+                      onChange={(e) => setResetConfirmText(e.target.value)}
+                      placeholder='Type "reset" here'
+                      className="w-full px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent"
+                      autoFocus
+                    />
+                    {resetError && (
+                      <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">
+                        {resetError}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex gap-3 justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={closeResetModal}
+                      disabled={isResetting}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      onClick={() => handleResetProgress(resetModalOpen)}
+                      disabled={resetConfirmText.toLowerCase() !== "reset" || isResetting}
+                      isLoading={isResetting}
+                    >
+                      Confirm Reset
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
 

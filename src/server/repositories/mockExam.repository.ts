@@ -149,6 +149,16 @@ export class MockExamRepository {
       passRate: Math.round((passedExams / completedExams.length) * 100),
     };
   }
+
+  /**
+   * Delete all mock exam sessions for a user
+   */
+  async deleteAllByUserId(userId: string): Promise<number> {
+    const result = await prisma.mockExamSession.deleteMany({
+      where: { userId },
+    });
+    return result.count;
+  }
 }
 
 export const mockExamRepository = new MockExamRepository();

@@ -99,6 +99,16 @@ class ExplanationViewRepository {
       count: r.viewCount,
     }));
   }
+
+  /**
+   * Delete all explanation view records for a user
+   */
+  async deleteAllByUserId(userId: string): Promise<number> {
+    const result = await prisma.dailyExplanationView.deleteMany({
+      where: { userId },
+    });
+    return result.count;
+  }
 }
 
 export const explanationViewRepository = new ExplanationViewRepository();

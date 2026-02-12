@@ -226,6 +226,16 @@ class ProgressRepository {
       count: cat._count.id,
     }));
   }
+
+  /**
+   * Delete all progress records for a user
+   */
+  async deleteAllByUserId(userId: string): Promise<number> {
+    const result = await prisma.userProgress.deleteMany({
+      where: { userId },
+    });
+    return result.count;
+  }
 }
 
 export const progressRepository = new ProgressRepository();

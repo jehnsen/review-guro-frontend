@@ -969,6 +969,31 @@ export const settingsApi = {
   },
 };
 
+// ==================== RESET PROGRESS TYPES ====================
+
+export type ResetProgressType = 'practice' | 'mock_exams' | 'everything';
+
+export interface ResetProgressResult {
+  type: ResetProgressType;
+  deletedRecords: {
+    userProgress?: number;
+    dailyAnalytics?: number;
+    mockExamSessions?: number;
+    explanationViews?: number;
+    streakReset?: boolean;
+  };
+}
+
+// Reset Progress API
+export const resetProgressApi = {
+  async resetProgress(type: ResetProgressType): Promise<ApiResponse<ResetProgressResult>> {
+    return fetchApi<ApiResponse<ResetProgressResult>>('/users/reset-progress', {
+      method: 'POST',
+      body: JSON.stringify({ type }),
+    });
+  },
+};
+
 // ==================== SECURITY/AUTH TYPES ====================
 
 export interface ChangePasswordRequest {

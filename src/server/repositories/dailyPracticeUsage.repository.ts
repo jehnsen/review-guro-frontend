@@ -147,6 +147,16 @@ class DailyPracticeUsageRepository {
 
     return phtDate;
   }
+
+  /**
+   * Delete all daily analytics records for a user
+   */
+  async deleteAllByUserId(userId: string): Promise<number> {
+    const result = await prisma.dailyAnalytics.deleteMany({
+      where: { userId },
+    });
+    return result.count;
+  }
 }
 
 export const dailyAnalyticsRepository = new DailyPracticeUsageRepository();

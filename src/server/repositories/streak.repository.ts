@@ -59,6 +59,27 @@ class StreakRepository {
 
     return updated;
   }
+
+  /**
+   * Reset all streak fields for a user
+   */
+  async reset(userId: string): Promise<StreakData> {
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        currentStreak: 0,
+        longestStreak: 0,
+        lastActivityDate: null,
+        streakRepairedAt: null,
+      },
+      select: {
+        currentStreak: true,
+        longestStreak: true,
+        lastActivityDate: true,
+        streakRepairedAt: true,
+      },
+    });
+  }
 }
 
 export const streakRepository = new StreakRepository();
