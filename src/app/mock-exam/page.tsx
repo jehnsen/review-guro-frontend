@@ -174,21 +174,39 @@ export default function MockExamPage() {
         // Check if there's an in-progress exam
         const historyResponse = await mockExamApi.getHistory({ status: "IN_PROGRESS", limit: 1 });
 
-        if (historyResponse.data?.exams && historyResponse.data.exams.length > 0) {
+        // Defensive checks to ensure data structure is valid
+        if (!historyResponse?.data?.exams || !Array.isArray(historyResponse.data.exams)) {
+          console.log("No active exam found or invalid response structure");
+          return;
+        }
+
+        if (historyResponse.data.exams.length > 0) {
           const activeExam = historyResponse.data.exams[0];
+
+          // Ensure activeExam has the required examId property
+          if (!activeExam?.examId) {
+            console.error("Active exam found but missing examId");
+            return;
+          }
 
           // Fetch full exam data including questions and answers
           const examResponse = await mockExamApi.getExam(activeExam.examId);
 
-          if (examResponse.data) {
+          if (examResponse?.data) {
             const examData = examResponse.data;
+
+            // Validate exam data has required properties
+            if (!examData.examId || !examData.questions || !Array.isArray(examData.questions)) {
+              console.error("Invalid exam data structure");
+              return;
+            }
 
             // Restore exam state
             setExamId(examData.examId);
             setQuestions(examData.questions);
             setAnswers(examData.answers || {});
             setFlaggedQuestions(examData.flaggedQuestions || []);
-            setTimeRemaining(examData.timeRemainingSeconds);
+            setTimeRemaining(examData.timeRemainingSeconds || 0);
             setConfig({
               totalQuestions: examData.totalQuestions,
               timeLimitMinutes: examData.timeLimitMinutes,
@@ -199,6 +217,7 @@ export default function MockExamPage() {
         }
       } catch (error) {
         console.error("Error checking for active exam:", error);
+        // Don't throw - just log and continue to setup screen
       } finally {
         setIsCheckingActiveExam(false);
       }

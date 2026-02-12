@@ -300,7 +300,12 @@ export default function PracticePage() {
           setQuestion(currentQ);
 
           if (currentQ.id !== questionId) {
-            router.replace(`/practice/${currentQ.id}${categoryFilter ? `?category=${categoryFilter}` : ""}`);
+            // Use replaceState instead of router.replace to avoid triggering
+            // Next.js navigation which remounts the component, resetting refs
+            // and causing an infinite fetch loop (RANDOM() returns different
+            // questions each time, so the questionId is never found).
+            const newUrl = `/practice/${currentQ.id}${categoryFilter ? `?category=${categoryFilter}` : ""}`;
+            window.history.replaceState(window.history.state, "", newUrl);
           }
         }
       } catch (error) {

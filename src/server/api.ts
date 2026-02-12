@@ -229,8 +229,14 @@ async function fetchApi<T>(
 
   if (!response.ok) {
     // Handle specific error messages from API
-    const errorMessage = data.message || data.error || getErrorMessage(response.status);
+    // Backend returns { success: false, message: "...", data: null } structure
+    const errorMessage = data?.message || data?.error || getErrorMessage(response.status);
     throw new ApiError(response.status, errorMessage, data);
+  }
+
+  // Ensure data is defined for successful responses
+  if (data === undefined || data === null) {
+    data = {};
   }
 
   return data;

@@ -43,3 +43,5 @@ next-env.d.ts
 
 postman_collection.json
 ReviewGuro.zip
+.claude
+package-lock.json

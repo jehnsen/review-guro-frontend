@@ -258,17 +258,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logout]);
 
   // AUTO-REFRESH: Set up automatic token refresh interval
+  // Use user ID as dependency to avoid re-running on every user object change
+  const userId = user?.id;
   useEffect(() => {
-    if (!user) return;
+    if (!userId) return;
 
     // Refresh token every 14 minutes (access token expires in 15 minutes)
     const refreshInterval = setInterval(() => {
       refreshAccessToken();
     }, REFRESH_INTERVAL);
 
-    // Also refresh on window focus (in case user returns after being away)
+    // Also refresh on window focus, but debounce to prevent rapid-fire refreshes
+    // (e.g., switching between DevTools and page triggers multiple focus events)
+    let lastFocusRefresh = 0;
+    const FOCUS_DEBOUNCE_MS = 60 * 1000; // At most once per minute on focus
+
     const handleFocus = () => {
-      refreshAccessToken();
+      const now = Date.now();
+      if (now - lastFocusRefresh > FOCUS_DEBOUNCE_MS) {
+        lastFocusRefresh = now;
+        refreshAccessToken();
+      }
     };
     window.addEventListener('focus', handleFocus);
 
@@ -276,7 +286,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearInterval(refreshInterval);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [user, refreshAccessToken, REFRESH_INTERVAL]);
+  }, [userId, refreshAccessToken, REFRESH_INTERVAL]);
 
   const value: AuthContextType = {
     user,
