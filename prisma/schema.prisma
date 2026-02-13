@@ -133,6 +133,7 @@ model Question {
 
   // Relations
   progress UserProgress[]
+  questionnaireAssignments QuestionnaireQuestion[]
 
   @@index([category])
   @@index([difficulty])
@@ -327,4 +328,48 @@ model UserSettings {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_settings")
+}
+
+// ============================================
+// Questionnaires
+// ============================================
+
+model Questionnaire {
+  id              String   @id @default(uuid()) @db.Uuid
+  title           String
+  description     String?  @db.Text
+  number          Int      @unique // Matches questionnaireNumber field
+  isActive        Boolean  @default(true) @map("is_active")
+  totalQuestions  Int      @default(0) @map("total_questions")
+  difficulty      Difficulty?
+  timeLimit       Int?     @map("time_limit") // in minutes
+  passingScore    Int?     @map("passing_score") // percentage
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  questions QuestionnaireQuestion[]
+
+  @@index([number])
+  @@index([isActive])
+  @@map("questionnaires")
+}
+
+model QuestionnaireQuestion {
+  id               String   @id @default(uuid()) @db.Uuid
+  questionnaireId  String   @map("questionnaire_id") @db.Uuid
+  questionId       String   @map("question_id") @db.Uuid
+  order            Int      @default(0) // Order of question in questionnaire
+
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  questionnaire Questionnaire @relation(fields: [questionnaireId], references: [id], onDelete: Cascade)
+  question      Question      @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionnaireId, questionId])
+  @@index([questionnaireId])
+  @@index([questionId])
+  @@index([questionnaireId, order])
+  @@map("questionnaire_questions")
 }

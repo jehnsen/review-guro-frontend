@@ -11,7 +11,11 @@ import { z } from 'zod';
 const updateProfileSchema = z.object({
   firstName: z.string().min(1).max(100).optional(),
   lastName: z.string().min(1).max(100).optional(),
-  examDate: z.string().datetime().optional(),
+  examDate: z.string().refine((date) => {
+    if (!date) return true; // Allow empty/null
+    const parsed = new Date(date);
+    return !isNaN(parsed.getTime()); // Check if valid date
+  }, { message: "Invalid date format" }).optional().nullable(),
 });
 
 async function getHandler(request: AuthenticatedRequest) {

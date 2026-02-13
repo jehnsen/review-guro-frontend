@@ -610,3 +610,9 @@ export class AppError extends Error {
 export interface AuthenticatedRequest {
   user: AuthTokenPayload;
 }
+
+// ============================================
+// Admin Types (Re-exported from admin.ts)
+// ============================================
+
+export * from './admin';

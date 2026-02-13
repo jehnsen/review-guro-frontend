@@ -18,6 +18,10 @@ import {
   User,
   Crown,
   Sparkles,
+  Users,
+  CreditCard,
+  TrendingUp,
+  FileText,
 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -34,6 +38,14 @@ const navItems: NavItem[] = [
   { href: "/mock-exam", label: "Mock Exam", icon: ClipboardCheck },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/settings", label: "Settings", icon: Settings },
+];
+
+const adminNavItems: NavItem[] = [
+  { href: "/admin/analytics", label: "Dashboard", icon: TrendingUp },
+  { href: "/admin/questions", label: "Questions", icon: BookOpen },
+  { href: "/admin/questionnaires", label: "Questionnaires", icon: FileText },
+  { href: "/admin/users", label: "Users", icon: Users },
+  { href: "/admin/payments", label: "Payments", icon: CreditCard },
 ];
 
 export function Sidebar() {
@@ -79,7 +91,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 py-6 px-3 overflow-y-auto">
-        <ul className="space-y-1">
+        {user?.role === "USER" && <ul className="space-y-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             return (
@@ -103,7 +115,48 @@ export function Sidebar() {
               </li>
             );
           })}
-        </ul>
+        </ul>}
+
+        {/* Admin Panel - Only visible for admin users */}
+        {user?.role === "ADMIN" && (
+          <>
+            {/* {!isCollapsed && (
+              <div className="px-3 py-2 mt-6">
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                  Admin Panel
+                </div>
+              </div>
+            )}
+            {isCollapsed && (
+              <div className="border-t border-slate-200 dark:border-slate-800 my-4"></div>
+            )} */}
+            <ul className="space-y-1">
+              {adminNavItems.map((item) => {
+                const isActive = pathname?.startsWith(item.href);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      className={`
+                        flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors
+                        ${
+                          isActive
+                            ? "bg-purple-50 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                            : "text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                        }
+                      `}
+                    >
+                      <item.icon size={20} className="flex-shrink-0" />
+                      {!isCollapsed && (
+                        <span className="text-sm font-medium">{item.label}</span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
       </nav>
 
       {/* Bottom Section */}

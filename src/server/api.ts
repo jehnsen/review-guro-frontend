@@ -1103,6 +1103,597 @@ export const paymentApi = {
   },
 };
 
+// ==================== ADMIN TYPES ====================
+
+// Questionnaire Types
+export interface QuestionnaireResponse {
+  id: string;
+  title: string;
+  description: string | null;
+  number: number;
+  isActive: boolean;
+  totalQuestions: number;
+  difficulty: Question["difficulty"] | null;
+  timeLimit: number | null;
+  passingScore: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuestionnaireQuestionResponse {
+  id: string;
+  order: number;
+  questionId: string;
+  questionText: string;
+  category: Question["category"];
+  difficulty: Question["difficulty"];
+  options: QuestionOption[];
+  correctOptionId: string;
+  explanationText: string | null;
+}
+
+export interface QuestionnaireWithQuestionsResponse extends QuestionnaireResponse {
+  questions: QuestionnaireQuestionResponse[];
+}
+
+export interface AdminQuestionnaireFilters {
+  isActive?: boolean;
+  difficulty?: Question["difficulty"];
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface CreateQuestionnaireRequest {
+  title: string;
+  description?: string;
+  number: number;
+  isActive?: boolean;
+  difficulty?: Question["difficulty"];
+  timeLimit?: number;
+  passingScore?: number;
+  questionIds?: string[];
+}
+
+export interface UpdateQuestionnaireRequest {
+  title?: string;
+  description?: string;
+  number?: number;
+  isActive?: boolean;
+  difficulty?: Question["difficulty"];
+  timeLimit?: number;
+  passingScore?: number;
+}
+
+export interface QuestionnaireStatsResponse {
+  total: number;
+  active: number;
+  inactive: number;
+  totalQuestionsAcrossAll: number;
+  averageQuestionsPerQuestionnaire: number;
+}
+
+export interface AdminQuestionFilters {
+  category?: Question["category"];
+  difficulty?: Question["difficulty"];
+  questionnaireNumber?: number;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface QuestionWithAnswer extends Question {
+  correctOptionId: string;
+  explanationText?: string | null;
+  aiExplanation?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CreateQuestionRequest {
+  category: Question["category"];
+  difficulty: Question["difficulty"];
+  questionText: string;
+  options: QuestionOption[];
+  correctOptionId: string;
+  explanationText?: string;
+  questionnaireNumber?: number;
+}
+
+export interface UpdateQuestionRequest {
+  category?: Question["category"];
+  difficulty?: Question["difficulty"];
+  questionText?: string;
+  options?: QuestionOption[];
+  correctOptionId?: string;
+  explanationText?: string;
+  questionnaireNumber?: number;
+}
+
+export interface QuestionStats {
+  total: number;
+  byCategory: Record<Question["category"], number>;
+  byDifficulty: Record<Question["difficulty"], number>;
+  withExplanations: number;
+  withAIExplanations: number;
+}
+
+export interface PaginatedResponse<T> {
+  success: boolean;
+  message: string;
+  data: T[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface AdminUserFilters {
+  role?: "USER" | "ADMIN";
+  isPremium?: boolean;
+  emailVerified?: boolean;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface AdminUserResponse {
+  id: string;
+  email: string;
+  role: "USER" | "ADMIN";
+  firstName: string | null;
+  lastName: string | null;
+  avatarUrl: string | null;
+  isPremium: boolean;
+  premiumExpiry: Date | null;
+  examDate: Date | null;
+  emailVerified: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  currentStreak: number;
+  longestStreak: number;
+  lastActivityDate: Date | null;
+  totalQuestions: number;
+  correctAnswers: number;
+  accuracy: number;
+  totalMockExams: number;
+}
+
+export interface AdminUserDetails {
+  user: AdminUserResponse;
+  stats: {
+    totalQuestions: number;
+    correctAnswers: number;
+    accuracy: number;
+    totalMockExams: number;
+    completedMockExams: number;
+    averageMockScore: number;
+    currentStreak: number;
+    longestStreak: number;
+  };
+  subscription: {
+    id?: string;
+    status: string;
+    purchaseDate: Date | null;
+    expiresAt: Date | null;
+  } | null;
+}
+
+export interface UpdateUserRequest {
+  firstName?: string;
+  lastName?: string;
+  examDate?: string | null;
+  emailVerified?: boolean;
+}
+
+export interface GrantSubscriptionRequest {
+  isPremium: boolean;
+  premiumExpiry?: Date | null;
+}
+
+export interface UserActivity {
+  practiceHistory: Array<{
+    date: Date;
+    questionsAnswered: number;
+    correctAnswers: number;
+    accuracy: number;
+  }>;
+  mockExamHistory: Array<{
+    examId: string;
+    completedAt: Date;
+    totalQuestions: number;
+    score: number;
+    passed: boolean;
+  }>;
+}
+
+export interface UserStatsOverview {
+  totalUsers: number;
+  premiumUsers: number;
+  freeUsers: number;
+  adminUsers: number;
+  verifiedUsers: number;
+  unverifiedUsers: number;
+  activeToday: number;
+  activeThisWeek: number;
+  activeThisMonth: number;
+}
+
+// Payment & Subscription Management Types
+export interface AdminPaymentFilters {
+  page?: number;
+  limit?: number;
+  status?: string;
+  provider?: string;
+  userId?: string;
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface AdminPaymentResponse {
+  id: string;
+  userId: string;
+  user: {
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+  };
+  amount: number;
+  currency: string;
+  provider: string;
+  providerPaymentId: string | null;
+  status: string;
+  description: string | null;
+  metadata: any;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface SubscriptionStatistics {
+  total: number;
+  active: number;
+  expired: number;
+  totalRevenue: number;
+  monthlyRevenue: number;
+  averageSubscriptionValue: number;
+  revenueByMonth: {
+    month: string;
+    revenue: number;
+    count: number;
+  }[];
+}
+
+export interface PaymentReconciliation {
+  totalPayments: number;
+  successfulPayments: number;
+  failedPayments: number;
+  pendingPayments: number;
+  totalRevenue: number;
+  refundedAmount: number;
+}
+
+// Analytics Dashboard Types
+export interface PlatformStatistics {
+  users: {
+    total: number;
+    premium: number;
+    free: number;
+    active: number;
+    newThisMonth: number;
+  };
+  revenue: {
+    total: number;
+    thisMonth: number;
+    lastMonth: number;
+    growth: number;
+  };
+  questions: {
+    total: number;
+    byCategory: {
+      category: string;
+      count: number;
+    }[];
+    byDifficulty: {
+      difficulty: string;
+      count: number;
+    }[];
+  };
+  activity: {
+    totalPracticeQuestions: number;
+    totalMockExams: number;
+    mockExamsCompleted: number;
+    completionRate: number;
+  };
+}
+
+export interface QuestionPerformanceMetrics {
+  questionId: string;
+  questionText: string;
+  category: string;
+  difficulty: string;
+  totalAttempts: number;
+  correctAttempts: number;
+  accuracyRate: number;
+  averageTimeSeconds: number;
+}
+
+export interface UserEngagementTrends {
+  dailyActiveUsers: {
+    date: string;
+    count: number;
+  }[];
+  weeklyActiveUsers: {
+    week: string;
+    count: number;
+  }[];
+  practiceQuestionsPerDay: {
+    date: string;
+    count: number;
+  }[];
+  mockExamsPerDay: {
+    date: string;
+    count: number;
+  }[];
+}
+
+export interface RevenueChartData {
+  daily: {
+    date: string;
+    revenue: number;
+    count: number;
+  }[];
+  monthly: {
+    month: string;
+    revenue: number;
+    count: number;
+  }[];
+  byPaymentMethod: {
+    method: string;
+    revenue: number;
+    count: number;
+  }[];
+}
+
+// Admin API
+export const adminApi = {
+  // ==================== QUESTION MANAGEMENT ====================
+
+  async listQuestions(filters: AdminQuestionFilters = {}): Promise<PaginatedResponse<QuestionWithAnswer>> {
+    const searchParams = new URLSearchParams();
+
+    if (filters.page) searchParams.set("page", filters.page.toString());
+    if (filters.limit) searchParams.set("limit", filters.limit.toString());
+    if (filters.category) searchParams.set("category", filters.category);
+    if (filters.difficulty) searchParams.set("difficulty", filters.difficulty);
+    if (filters.questionnaireNumber) searchParams.set("questionnaireNumber", filters.questionnaireNumber.toString());
+    if (filters.search) searchParams.set("search", filters.search);
+
+    const queryString = searchParams.toString();
+    const endpoint = `/admin/questions${queryString ? `?${queryString}` : ""}`;
+
+    return fetchApi<PaginatedResponse<QuestionWithAnswer>>(endpoint);
+  },
+
+  async getQuestion(id: string): Promise<ApiResponse<QuestionWithAnswer>> {
+    return fetchApi<ApiResponse<QuestionWithAnswer>>(`/admin/questions/${id}`);
+  },
+
+  async createQuestion(data: CreateQuestionRequest): Promise<ApiResponse<QuestionWithAnswer>> {
+    return fetchApi<ApiResponse<QuestionWithAnswer>>("/admin/questions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateQuestion(id: string, data: UpdateQuestionRequest): Promise<ApiResponse<QuestionWithAnswer>> {
+    return fetchApi<ApiResponse<QuestionWithAnswer>>(`/admin/questions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteQuestion(id: string): Promise<ApiResponse<null>> {
+    return fetchApi<ApiResponse<null>>(`/admin/questions/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  async getQuestionStats(): Promise<ApiResponse<QuestionStats>> {
+    return fetchApi<ApiResponse<QuestionStats>>("/admin/questions/stats");
+  },
+
+  // ==================== USER MANAGEMENT ====================
+
+  async listUsers(filters: AdminUserFilters = {}): Promise<PaginatedResponse<AdminUserResponse>> {
+    const searchParams = new URLSearchParams();
+
+    if (filters.page) searchParams.set("page", filters.page.toString());
+    if (filters.limit) searchParams.set("limit", filters.limit.toString());
+    if (filters.role) searchParams.set("role", filters.role);
+    if (filters.isPremium !== undefined) searchParams.set("isPremium", filters.isPremium.toString());
+    if (filters.emailVerified !== undefined) searchParams.set("emailVerified", filters.emailVerified.toString());
+    if (filters.search) searchParams.set("search", filters.search);
+
+    const queryString = searchParams.toString();
+    const endpoint = `/admin/users${queryString ? `?${queryString}` : ""}`;
+
+    return fetchApi<PaginatedResponse<AdminUserResponse>>(endpoint);
+  },
+
+  async getUser(id: string): Promise<ApiResponse<AdminUserDetails>> {
+    return fetchApi<ApiResponse<AdminUserDetails>>(`/admin/users/${id}`);
+  },
+
+  async updateUser(id: string, data: UpdateUserRequest): Promise<ApiResponse<AdminUserResponse>> {
+    return fetchApi<ApiResponse<AdminUserResponse>>(`/admin/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async grantSubscription(id: string, data: GrantSubscriptionRequest): Promise<ApiResponse<AdminUserResponse>> {
+    return fetchApi<ApiResponse<AdminUserResponse>>(`/admin/users/${id}/subscription`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async changeUserRole(id: string, role: "USER" | "ADMIN"): Promise<ApiResponse<AdminUserResponse>> {
+    return fetchApi<ApiResponse<AdminUserResponse>>(`/admin/users/${id}/role`, {
+      method: "POST",
+      body: JSON.stringify({ role }),
+    });
+  },
+
+  async getUserActivity(id: string): Promise<ApiResponse<UserActivity>> {
+    return fetchApi<ApiResponse<UserActivity>>(`/admin/users/${id}/activity`);
+  },
+
+  async getUserStats(): Promise<ApiResponse<UserStatsOverview>> {
+    return fetchApi<ApiResponse<UserStatsOverview>>("/admin/users/stats");
+  },
+
+  // ==================== PAYMENT MANAGEMENT ====================
+
+  async listPayments(filters: AdminPaymentFilters = {}): Promise<PaginatedResponse<AdminPaymentResponse>> {
+    const searchParams = new URLSearchParams();
+
+    if (filters.page) searchParams.set("page", filters.page.toString());
+    if (filters.limit) searchParams.set("limit", filters.limit.toString());
+    if (filters.status) searchParams.set("status", filters.status);
+    if (filters.provider) searchParams.set("provider", filters.provider);
+    if (filters.userId) searchParams.set("userId", filters.userId);
+    if (filters.search) searchParams.set("search", filters.search);
+    if (filters.dateFrom) searchParams.set("dateFrom", filters.dateFrom);
+    if (filters.dateTo) searchParams.set("dateTo", filters.dateTo);
+
+    const queryString = searchParams.toString();
+    const endpoint = `/admin/payments${queryString ? `?${queryString}` : ""}`;
+
+    return fetchApi<PaginatedResponse<AdminPaymentResponse>>(endpoint);
+  },
+
+  async getPayment(id: string): Promise<ApiResponse<AdminPaymentResponse>> {
+    return fetchApi<ApiResponse<AdminPaymentResponse>>(`/admin/payments/${id}`);
+  },
+
+  async refundPayment(id: string, reason?: string): Promise<ApiResponse<{ paymentId: string }>> {
+    return fetchApi<ApiResponse<{ paymentId: string }>>(`/admin/payments/${id}/refund`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  async getPaymentStats(): Promise<ApiResponse<PaymentReconciliation>> {
+    return fetchApi<ApiResponse<PaymentReconciliation>>("/admin/payments/stats");
+  },
+
+  async getSubscriptionStats(): Promise<ApiResponse<SubscriptionStatistics>> {
+    return fetchApi<ApiResponse<SubscriptionStatistics>>("/admin/subscriptions/stats");
+  },
+
+  // ==================== ANALYTICS ====================
+
+  async getPlatformStatistics(): Promise<ApiResponse<PlatformStatistics>> {
+    return fetchApi<ApiResponse<PlatformStatistics>>("/admin/analytics/platform");
+  },
+
+  async getQuestionPerformance(limit: number = 50, sortBy: "hardest" | "easiest" | "most_attempted" = "hardest"): Promise<ApiResponse<{
+    questions: QuestionPerformanceMetrics[];
+    byCategory: any[];
+    byDifficulty: any[];
+  }>> {
+    const searchParams = new URLSearchParams();
+    searchParams.set("limit", limit.toString());
+    searchParams.set("sortBy", sortBy);
+
+    return fetchApi<ApiResponse<{
+      questions: QuestionPerformanceMetrics[];
+      byCategory: any[];
+      byDifficulty: any[];
+    }>>(`/admin/analytics/questions?${searchParams.toString()}`);
+  },
+
+  async getEngagementTrends(days: number = 30): Promise<ApiResponse<UserEngagementTrends>> {
+    return fetchApi<ApiResponse<UserEngagementTrends>>(`/admin/analytics/engagement?days=${days}`);
+  },
+
+  async getRevenueData(days: number = 30): Promise<ApiResponse<RevenueChartData>> {
+    return fetchApi<ApiResponse<RevenueChartData>>(`/admin/analytics/revenue?days=${days}`);
+  },
+
+  // ==================== QUESTIONNAIRE MANAGEMENT ====================
+
+  async listQuestionnaires(filters: AdminQuestionnaireFilters = {}): Promise<PaginatedResponse<QuestionnaireResponse>> {
+    const searchParams = new URLSearchParams();
+
+    if (filters.page) searchParams.set("page", filters.page.toString());
+    if (filters.limit) searchParams.set("limit", filters.limit.toString());
+    if (filters.isActive !== undefined) searchParams.set("isActive", filters.isActive.toString());
+    if (filters.difficulty) searchParams.set("difficulty", filters.difficulty);
+    if (filters.search) searchParams.set("search", filters.search);
+
+    const queryString = searchParams.toString();
+    const endpoint = `/admin/questionnaires${queryString ? `?${queryString}` : ""}`;
+
+    return fetchApi<PaginatedResponse<QuestionnaireResponse>>(endpoint);
+  },
+
+  async getQuestionnaire(id: string): Promise<ApiResponse<QuestionnaireWithQuestionsResponse>> {
+    return fetchApi<ApiResponse<QuestionnaireWithQuestionsResponse>>(`/admin/questionnaires/${id}`);
+  },
+
+  async createQuestionnaire(data: CreateQuestionnaireRequest): Promise<ApiResponse<QuestionnaireWithQuestionsResponse>> {
+    return fetchApi<ApiResponse<QuestionnaireWithQuestionsResponse>>("/admin/questionnaires", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateQuestionnaire(id: string, data: UpdateQuestionnaireRequest): Promise<ApiResponse<QuestionnaireWithQuestionsResponse>> {
+    return fetchApi<ApiResponse<QuestionnaireWithQuestionsResponse>>(`/admin/questionnaires/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteQuestionnaire(id: string): Promise<ApiResponse<null>> {
+    return fetchApi<ApiResponse<null>>(`/admin/questionnaires/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  async addQuestionsToQuestionnaire(id: string, questionIds: string[]): Promise<ApiResponse<QuestionnaireWithQuestionsResponse>> {
+    return fetchApi<ApiResponse<QuestionnaireWithQuestionsResponse>>(`/admin/questionnaires/${id}/questions`, {
+      method: "POST",
+      body: JSON.stringify({ questionIds }),
+    });
+  },
+
+  async removeQuestionFromQuestionnaire(id: string, questionId: string): Promise<ApiResponse<QuestionnaireWithQuestionsResponse>> {
+    return fetchApi<ApiResponse<QuestionnaireWithQuestionsResponse>>(`/admin/questionnaires/${id}/questions/${questionId}`, {
+      method: "DELETE",
+    });
+  },
+
+  async reorderQuestionnaireQuestions(
+    id: string,
+    questionOrders: Array<{ questionId: string; order: number }>
+  ): Promise<ApiResponse<QuestionnaireWithQuestionsResponse>> {
+    return fetchApi<ApiResponse<QuestionnaireWithQuestionsResponse>>(`/admin/questionnaires/${id}/reorder`, {
+      method: "PATCH",
+      body: JSON.stringify({ questionOrders }),
+    });
+  },
+
+  async getQuestionnaireStats(): Promise<ApiResponse<QuestionnaireStatsResponse>> {
+    return fetchApi<ApiResponse<QuestionnaireStatsResponse>>("/admin/questionnaires/stats");
+  },
+};
+
 // Generic API helper for simple requests
 export const api = {
   async get<T>(endpoint: string): Promise<T> {

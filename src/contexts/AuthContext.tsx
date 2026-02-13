@@ -200,9 +200,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     authApi.logout();
     setUser(null);
 
-    // Clear any session-related data
+    // Clear session and auth-related storage
     if (typeof window !== "undefined") {
       sessionStorage.clear();
+
+      // Remove all auth-related items from localStorage
+      // Keep only non-sensitive preferences like theme
+      const themePreference = localStorage.getItem("themePreference");
+      localStorage.clear();
+      if (themePreference) {
+        localStorage.setItem("themePreference", themePreference);
+      }
     }
 
     // Use replace to prevent going back to authenticated pages
