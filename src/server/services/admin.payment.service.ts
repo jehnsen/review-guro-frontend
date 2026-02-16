@@ -11,7 +11,7 @@ import {
   PaymentReconciliation,
 } from '@/server/types';
 import { NotFoundError } from '@/server/utils/errors';
-import { PaginatedResponse } from '@/server/types';
+import { PaginatedResult } from '@/server/types';
 
 class AdminPaymentService {
   /**
@@ -19,7 +19,7 @@ class AdminPaymentService {
    */
   async listPayments(
     filters: AdminPaymentFilters
-  ): Promise<PaginatedResponse<AdminPaymentResponse>> {
+  ): Promise<PaginatedResult<AdminPaymentResponse>> {
     const {
       page = 1,
       limit = 20,
