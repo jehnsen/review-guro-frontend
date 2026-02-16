@@ -3,7 +3,7 @@
  * Business logic for admin user management operations
  */
 
-import { User, UserRole } from '@prisma/client';
+import { User, UserRole, SubscriptionStatus } from '@prisma/client';
 import { userRepository } from '../repositories/user.repository';
 import { prisma } from '../config/database';
 import {
@@ -219,7 +219,7 @@ class AdminUserService {
     const averageMockScore = mockExamStats._avg?.score ?? 0;
 
     // Get subscription
-    const subscription = await prisma.subscription.findUnique({
+    const sub = await prisma.subscription.findUnique({
       where: { userId },
       select: {
         id: true,
@@ -228,6 +228,10 @@ class AdminUserService {
         expiresAt: true,
       },
     });
+
+    const subscription = sub
+      ? { ...sub, status: sub.status as SubscriptionStatus }
+      : null;
 
     return {
       user: {
@@ -269,29 +273,24 @@ class AdminUserService {
     );
 
     // Update or create subscription record
+    const planStatus = data.isPremium ? 'SEASON_PASS' : 'FREE';
     await prisma.subscription.upsert({
       where: { userId },
       create: {
         userId,
-        status: data.isPremium ? 'SEASON_PASS' : 'FREE',
-        plan: data.isPremium ? 'SEASON_PASS' : 'FREE',
-        startedAt: data.isPremium ? new Date() : null,
+        status: planStatus,
+        planName: planStatus,
+        planPrice: 0,
+        purchaseDate: new Date(),
+        paymentMethod: 'admin',
+        amountPaid: 0,
+        transactionId: `admin-${userId}-${Date.now()}`,
         expiresAt: data.premiumExpiry,
-        autoRenew: false,
-        unlimitedPractice: data.isPremium,
-        aiTutoring: data.isPremium,
-        mockExams: data.isPremium,
-        analytics: data.isPremium,
       },
       update: {
-        status: data.isPremium ? 'SEASON_PASS' : 'FREE',
-        plan: data.isPremium ? 'SEASON_PASS' : 'FREE',
-        startedAt: data.isPremium ? new Date() : null,
+        status: planStatus,
+        planName: planStatus,
         expiresAt: data.premiumExpiry,
-        unlimitedPractice: data.isPremium,
-        aiTutoring: data.isPremium,
-        mockExams: data.isPremium,
-        analytics: data.isPremium,
       },
     });
 
@@ -375,7 +374,7 @@ class AdminUserService {
       take: 30, // Last 30 days
       select: {
         date: true,
-        practiceCount: true,
+        questionsCount: true,
       },
     });
 

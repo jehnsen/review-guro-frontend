@@ -3,7 +3,7 @@
  * Business logic for admin question management (CRUD operations)
  */
 
-import { Question, QuestionCategory, Difficulty } from '@prisma/client';
+import { Question, QuestionCategory, Difficulty, Prisma } from '@prisma/client';
 import { questionRepository } from '../repositories/question.repository';
 import { questionService } from './question.service';
 import {
@@ -116,7 +116,7 @@ class AdminQuestionService {
       category: data.category,
       difficulty: data.difficulty,
       questionText: data.questionText,
-      options: data.options as unknown as Record<string, unknown>, // Prisma JsonValue
+      options: data.options as unknown as Prisma.InputJsonValue,
       correctOptionId: data.correctOptionId,
       explanationText: data.explanationText ?? null,
       questionnaireNumber: data.questionnaireNumber ?? 1,
@@ -159,7 +159,7 @@ class AdminQuestionService {
       ...(data.category && { category: data.category }),
       ...(data.difficulty && { difficulty: data.difficulty }),
       ...(data.questionText && { questionText: data.questionText }),
-      ...(data.options && { options: data.options as unknown as Record<string, unknown> }),
+      ...(data.options && { options: data.options as unknown as Prisma.InputJsonValue }),
       ...(data.correctOptionId && { correctOptionId: data.correctOptionId }),
       ...(data.explanationText !== undefined && { explanationText: data.explanationText }),
       ...(data.questionnaireNumber !== undefined && {
