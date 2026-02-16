@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { QuestionWithAnswer, CreateQuestionRequest, QuestionOption } from "@/server/api";
+import { Question, QuestionWithAnswer, CreateQuestionRequest, QuestionOption } from "@/server/api";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Plus, Trash2 } from "lucide-react";
@@ -172,7 +172,7 @@ export function QuestionForm({
           </label>
           <select
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => setCategory(e.target.value as Question["category"])}
             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             {CATEGORIES.map((cat) => (
@@ -189,7 +189,7 @@ export function QuestionForm({
           </label>
           <select
             value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value)}
+            onChange={(e) => setDifficulty(e.target.value as Question["difficulty"])}
             className="w-full px-3 py-2 border border-slate-300 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             {DIFFICULTIES.map((diff) => (
