@@ -24,7 +24,7 @@ const planDetails = {
   season_pass: {
     name: "Season Pass",
     description: "Full access to all premium features",
-    monthlyPrice: 299,
+    monthlyPrice: 399,
     yearlyPrice: 2499,
     features: [
       "Unlimited practice questions",

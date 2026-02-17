@@ -883,7 +883,7 @@ export default function MockExamPage() {
                         icon={Crown}
                         className="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700"
                       >
-                        Upgrade for ₱299/month
+                        Upgrade for ₱399/month
                       </Button>
                     </Link>
                     <Link href="/pricing" className="text-sm text-amber-700 dark:text-amber-300 hover:underline">
