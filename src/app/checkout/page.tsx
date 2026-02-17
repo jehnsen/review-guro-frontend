@@ -91,9 +91,30 @@ function CheckoutContent() {
             }
 
             // Check if user's premium status has been updated
-            const profileResponse = await fetch('/api/auth/me', {
-              credentials: 'include', // Use httpOnly cookies instead of localStorage
+            let profileResponse = await fetch('/api/auth/me', {
+              credentials: 'include',
             });
+
+            // If token expired, try refreshing it before giving up
+            if (profileResponse.status === 401) {
+              const refreshResponse = await fetch('/api/auth/refresh', {
+                method: 'POST',
+                credentials: 'include',
+              });
+
+              if (refreshResponse.ok) {
+                // Token refreshed — retry the profile check
+                profileResponse = await fetch('/api/auth/me', {
+                  credentials: 'include',
+                });
+              } else {
+                // Refresh also failed — stop polling
+                if (pollIntervalId) clearInterval(pollIntervalId);
+                setIsProcessing(false);
+                setError("Your session has expired. Please sign in again and check your payment status in the dashboard.");
+                return;
+              }
+            }
 
             if (profileResponse.ok) {
               const profileData = await profileResponse.json();
@@ -111,11 +132,6 @@ function CheckoutContent() {
                   router.push(`/checkout/success?ref=${encodeURIComponent(referenceNumber)}`);
                 }, 2000);
               }
-            } else if (profileResponse.status === 401) {
-              // Authentication failed - stop polling to prevent infinite loop
-              if (pollIntervalId) clearInterval(pollIntervalId);
-              setIsProcessing(false);
-              setError("Authentication expired. Please sign in again and try again.");
             }
           } catch (pollError) {
             console.error('Poll error:', pollError);
