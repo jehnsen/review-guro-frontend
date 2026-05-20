@@ -5,21 +5,39 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authService } from '@/server/services/auth.service';
+import { auditService } from '@/server/services/audit.service';
 import { createSuccessResponse } from '@/server/utils/nextResponse';
 
 export async function POST(request: NextRequest) {
   // Get refresh token from cookie to revoke it in database
   const refreshToken = request.cookies.get('refresh_token')?.value;
 
+  // Decode userId from the access token cookie (best-effort, for audit logging only)
+  let auditUserId: string | undefined;
+  const accessToken = request.cookies.get('auth_token')?.value;
+  if (accessToken) {
+    try {
+      const payload = JSON.parse(atob(accessToken.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      auditUserId = payload.userId;
+    } catch {}
+  }
+
   if (refreshToken) {
     try {
-      // Revoke refresh token in database
       await authService.signout(refreshToken);
     } catch (error) {
-      // Continue with logout even if revocation fails
       console.error('Failed to revoke refresh token:', error);
     }
   }
+
+  auditService.log({
+    userId: auditUserId,
+    action: 'user.logout',
+    resource: 'user',
+    resourceId: auditUserId,
+    ipAddress: request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || undefined,
+    userAgent: request.headers.get('user-agent') || undefined,
+  });
 
   // Create response
   const response = createSuccessResponse(

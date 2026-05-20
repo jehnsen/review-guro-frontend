@@ -331,6 +331,27 @@ model UserSettings {
 }
 
 // ============================================
+// Audit Logging
+// ============================================
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  action    String   // e.g. "user.login", "payment.activated", "admin.delete_question"
+  resource  String?  // e.g. "user", "payment", "question"
+  resourceId String? @map("resource_id")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  metadata  Json?    // additional context (no PII)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ============================================
 // Questionnaires
 // ============================================
 

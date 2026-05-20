@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createSuccessResponse } from '@/server/utils/nextResponse';
 import { prisma } from '@/server/config/database';
 import { paymongoService } from '@/server/services/paymongo.service';
+import { auditService } from '@/server/services/audit.service';
 import { config } from '@/server/config/env';
 
 export async function POST(request: NextRequest) {
@@ -19,75 +20,43 @@ export async function POST(request: NextRequest) {
     // Get raw body for signature verification
     const rawBody = await request.text();
 
-    // If webhook secret is configured, enforce signature verification
-    if (webhookSecret) {
-      if (!signature) {
-        console.error('Webhook rejected: Missing signature header');
-        return NextResponse.json(
-          { error: 'Missing signature' },
-          { status: 401 }
-        );
+    // Signature verification is mandatory in production
+    if (!webhookSecret) {
+      if (process.env.NODE_ENV === 'production') {
+        console.error('Webhook rejected: PAYMONGO_WEBHOOK_SECRET is not configured');
+        return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
       }
-
-      const isValid = paymongoService.verifyWebhookSignature(
-        rawBody,
-        signature,
-        webhookSecret
-      );
-
-      if (!isValid) {
-        console.error('Webhook rejected: Invalid signature');
-        return NextResponse.json(
-          { error: 'Invalid signature' },
-          { status: 401 }
-        );
-      }
-
-      console.log('✅ Webhook signature verified successfully');
+      console.warn('[DEV] Webhook secret not set — skipping signature verification');
     } else {
-      console.warn('⚠️ WARNING: Webhook secret not configured - signature verification disabled');
-      console.warn('⚠️ This is a SECURITY RISK in production. Set PAYMONGO_WEBHOOK_SECRET in your environment.');
+      if (!signature) {
+        return NextResponse.json({ error: 'Missing signature' }, { status: 401 });
+      }
+      const isValid = paymongoService.verifyWebhookSignature(rawBody, signature, webhookSecret);
+      if (!isValid) {
+        return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
+      }
     }
 
     const body = JSON.parse(rawBody);
 
-    // Log the complete raw payload for debugging
-    console.log('PayMongo webhook RAW payload:', JSON.stringify(body, null, 2));
-
-    // PayMongo webhook structure:
-    // { data: { id: "evt_...", type: "event", attributes: { type: "link.payment.paid", data: {...} } } }
-
     const eventData = body.data;
     if (!eventData) {
-      console.error('Invalid webhook: missing data field');
+      console.error('[Webhook] Missing data field in payload');
       return createSuccessResponse(null, 'Webhook received');
     }
 
     const eventType = eventData.attributes?.type;
-
-    console.log('Webhook event received:', {
-      eventId: eventData.id,
-      eventType: eventType,
-      hasNestedData: !!eventData.attributes?.data
-    });
-
     if (!eventType) {
-      console.error('Cannot determine event type from webhook payload');
+      console.error('[Webhook] Cannot determine event type');
       return createSuccessResponse(null, 'Webhook received');
     }
 
-    // Handle payment events
     if (eventType === 'checkout_session.payment.paid') {
-      // Checkout Sessions API - this is the preferred method with proper redirects
       await handleCheckoutSessionPaid(eventData);
     } else if (eventType === 'link.payment.paid' || eventType === 'payment.paid') {
-      // Links API fallback (legacy)
       await handlePaymentPaid(eventData);
     } else if (eventType === 'payment.failed') {
-      console.log('Payment failed event received:', eventData.id);
-      // TODO: Handle payment failure if needed
-    } else {
-      console.log('Unhandled webhook event type:', eventType);
+      console.error('[Webhook] Payment failed:', eventData.id);
     }
 
     return createSuccessResponse(null, 'Webhook processed');
@@ -166,20 +135,12 @@ async function handleCheckoutSessionPaid(eventData: any) {
     const amount = sessionAttributes.line_items?.[0]?.amount || 39900; // Default to season pass price
     const paymentMethodUsed = firstPayment?.attributes?.source?.type || 'checkout_session';
 
-    console.log('Processing checkout session payment:', {
-      sessionId: sessionData.id,
-      paymentId,
-      userId,
-      referenceNumber,
-      amount,
-      metadata
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Webhook/dev] Processing checkout session:', { sessionId: sessionData.id, userId });
+    }
 
     if (!userId) {
-      console.error('Cannot process checkout session: userId not found in metadata', {
-        sessionId: sessionData.id,
-        metadata
-      });
+      console.error('[Webhook] userId not found in checkout session metadata:', sessionData.id);
       return;
     }
 
@@ -243,10 +204,8 @@ async function handleCheckoutSessionPaid(eventData: any) {
         },
       });
 
-      console.log('✅ Checkout session payment processed for user:', userId);
-      console.log('✅ User isPremium set to TRUE');
-      console.log('✅ Session ID:', sessionData.id);
-      console.log('✅ Reference Number:', referenceNumber);
+      console.log('[Webhook] Checkout session payment processed:', { userId, sessionId: sessionData.id });
+      auditService.log({ userId, action: 'payment.activated', resource: 'subscription', metadata: { paymentId, referenceNumber } });
     });
   } catch (error) {
     console.error('Error processing checkout session payment:', error);
@@ -339,10 +298,6 @@ async function handlePaymentPaid(eventData: any) {
       const firstPayment = paymentArray[0]?.data;
       const paymentAttrs = firstPayment?.attributes || {};
 
-      // Try to get userId from:
-      // 1. Link's metadata (if PayMongo preserved it)
-      // 2. Remarks field (our fallback)
-      // 3. Payment's metadata
       userId = linkAttributes.metadata?.userId
         || extractUserIdFromRemarks(linkAttributes.remarks)
         || paymentAttrs.metadata?.userId;
@@ -353,17 +308,9 @@ async function handlePaymentPaid(eventData: any) {
       paymentMethodUsed = paymentAttrs.source?.type || 'unknown';
       paymentId = firstPayment?.id || nestedData.id;
 
-      console.log('Processing link payment:', {
-        linkId: nestedData.id,
-        paymentId,
-        userId,
-        referenceNumber,
-        amount,
-        status,
-        paymentMethodUsed,
-        remarks: linkAttributes.remarks,
-        hasPayments: paymentArray.length
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Webhook/dev] Processing link payment:', { linkId: nestedData.id, userId });
+      }
     } else {
       // For payment.paid events, extract directly from payment attributes
       const metadata = nestedAttributes.metadata || {};
@@ -385,37 +332,17 @@ async function handlePaymentPaid(eventData: any) {
       paymentId = nestedData.id;
       status = nestedAttributes.status;
 
-      console.log('Processing direct payment:', {
-        paymentId,
-        userId,
-        referenceNumber,
-        amount,
-        status,
-        paymentMethodUsed,
-        metadata,
-        origin: nestedAttributes.origin
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[Webhook/dev] Processing direct payment:', { paymentId, userId });
+      }
     }
 
     if (!userId) {
-      // For link-originated payments without userId, try to look up via reference number
-      const pmRefNumber = nestedAttributes.metadata?.pm_reference_number || nestedAttributes.external_reference_number;
-      if (pmRefNumber) {
-        console.log('userId not found, but this may be a link payment. Reference:', pmRefNumber);
-        console.log('The link.payment.paid event should handle this payment.');
-      }
-
-      console.error('Cannot process payment: userId not found', {
-        paymentId,
-        isLinkEvent,
-        remarks: isLinkEvent ? nestedAttributes.remarks : undefined,
-        metadata: nestedAttributes.metadata
-      });
+      console.error('[Webhook] userId not found in payment event:', { paymentId, isLinkEvent });
       return;
     }
 
     if (status !== 'paid') {
-      console.warn('Payment status is not "paid":', status);
       return;
     }
 
@@ -478,10 +405,8 @@ async function handlePaymentPaid(eventData: any) {
         },
       });
 
-      console.log('✅ Payment processed successfully for user:', userId);
-      console.log('✅ User isPremium set to TRUE');
-      console.log('✅ Payment ID:', paymentId);
-      console.log('✅ Reference Number:', referenceNumber);
+      console.log('[Webhook] Payment processed:', { userId, paymentId });
+      auditService.log({ userId, action: 'payment.activated', resource: 'subscription', metadata: { paymentId, referenceNumber } });
     });
   } catch (error) {
     console.error('Error processing payment:', error);

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { authService } from '@/server/services/auth.service';
+import { auditService } from '@/server/services/audit.service';
 import { createSuccessResponse, createErrorResponse } from '@/server/utils/nextResponse';
 import { rateLimiters } from '@/server/middlewares/rateLimit';
 import { LoginDTO } from '@/server/types';
@@ -35,6 +36,15 @@ async function handler(request: NextRequest) {
       userAgent,
       ipAddress
     );
+
+    auditService.log({
+      userId: result.user.id,
+      action: 'user.login',
+      resource: 'user',
+      resourceId: result.user.id,
+      ipAddress,
+      userAgent,
+    });
 
     // Create response with user data (tokens not in body for security)
     const response = createSuccessResponse(

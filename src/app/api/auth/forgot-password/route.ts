@@ -6,6 +6,7 @@
 
 import { NextRequest } from 'next/server';
 import { authService } from '@/server/services/auth.service';
+import { userRepository } from '@/server/repositories/user.repository';
 import { createSuccessResponse, createErrorResponse } from '@/server/utils/nextResponse';
 import { rateLimiters } from '@/server/middlewares/rateLimit';
 import { z } from 'zod';
@@ -21,9 +22,9 @@ async function handler(request: NextRequest) {
     // Validate input
     const validatedData = forgotPasswordSchema.parse(body);
 
-    // Request password reset
-    // This method doesn't throw for non-existent emails to prevent enumeration
     await authService.requestPasswordReset(validatedData.email);
+    // Opportunistically clean up expired tokens (fire-and-forget)
+    userRepository.deleteExpiredPasswordResetTokens().catch(() => {});
 
     // Always return success to prevent email enumeration
     return createSuccessResponse(

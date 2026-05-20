@@ -223,6 +223,22 @@ class UserRepository {
   }
 
   /**
+   * Delete all expired password reset tokens (opportunistic cleanup)
+   */
+  async deleteExpiredPasswordResetTokens(): Promise<void> {
+    await prisma.user.updateMany({
+      where: {
+        passwordResetToken: { not: null },
+        passwordResetExpiry: { lt: new Date() },
+      },
+      data: {
+        passwordResetToken: null,
+        passwordResetExpiry: null,
+      },
+    });
+  }
+
+  /**
    * Get or create user settings
    */
   async getSettings(userId: string) {

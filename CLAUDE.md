@@ -75,6 +75,7 @@ review-guro-ver2/
 6. **Payment** - Payment transaction records (PayMongo)
 7. **DailyAnalytics** - Daily practice question counts
 8. **DailyExplanationView** - Daily AI explanation usage tracking
+9. **AuditLog** - Immutable audit trail for sensitive operations (login, register, logout, payment activation)
 
 ### Key Enums
 
@@ -386,14 +387,28 @@ For issues and feedback, refer to the project repository issue tracker.
 
 ### Authentication Security
 - **httpOnly Cookies**: JWT tokens stored in httpOnly cookies (XSS protection)
-- **CSRF Protection**: SameSite cookie attribute prevents cross-site attacks
+- **CSRF Protection**: SameSite=Strict cookies + Origin header validation on all mutation API routes
+- **Admin Route Guard**: Next.js middleware rejects non-admin requests before the page loads
 - **HTTPS Enforcement**: Secure flag ensures tokens only sent over HTTPS
 - **Automatic Cookie Management**: Browser-managed token storage and expiry
-- **Signature Verification**: PayMongo webhook signatures verified to prevent tampering
-- **Rate Limiting**: Protection against brute force attacks on auth endpoints
+- **Signature Verification**: PayMongo webhook signatures mandatory in production (app returns 500 if secret is missing)
+- **Rate Limiting**: Protection against brute force attacks on auth endpoints; public-key endpoint also rate-limited
+- **Input Validation**: Zod validation on all route params (e.g. payment reference number)
 - **Environment Validation**: Application exits on missing critical ENV variables
+- **Audit Trail**: All sensitive operations (login, register, logout, payment) logged to `audit_logs` table
+- **Token Cleanup**: Expired password reset tokens cleaned up opportunistically on every forgot-password request
 
 **Security Documentation**: [SECURITY_FIX_XSS_JWT.md](SECURITY_FIX_XSS_JWT.md)
+
+### Recent Security Fixes (2026-05-20)
+1. **Admin Route Protection**: Moved from client-side `useEffect` to Next.js middleware — non-admins are redirected before the page renders
+2. **CSRF Hardening**: Added Origin header check for all mutation API routes as defense-in-depth
+3. **Webhook Mandatory Verification**: `PAYMONGO_WEBHOOK_SECRET` is now required in production; previously optional
+4. **Audit Logging**: New `AuditLog` DB model and `audit.service.ts`; login, register, logout, and payment events recorded
+5. **Rate Limit Public Key**: `/api/payments/paymongo/public-key` now wrapped with `rateLimiters.general()`
+6. **Route Param Validation**: Payment reference number validated with Zod before forwarding to PayMongo API
+7. **Expired Token Cleanup**: Expired password reset tokens bulk-deleted on each forgot-password request
+8. **Console.log Audit**: Sensitive payment data removed from production logs; debug logs wrapped in `NODE_ENV === 'development'`
 
 ### Recent Security Fixes (2026-02-07)
 1. **XSS Vulnerability (CRITICAL)**: Migrated from localStorage to httpOnly cookies
@@ -449,8 +464,17 @@ Located in [src/__tests__/](src/__tests__/)
 - **Rate Limiting**: Protection against abuse on sensitive endpoints
 - **Email Service**: Integrated Resend for transactional emails
 - **Timezone Utilities**: Proper timezone handling for analytics
+- **Admin Route Protection**: Next.js middleware decodes JWT cookie and redirects non-admins before the page renders
+- **CSRF Origin Check**: Middleware validates `Origin` header matches app host for all mutation requests (`POST`, `PUT`, `PATCH`, `DELETE`)
 
-**Files**: [src/server/middlewares/rateLimit.ts](src/server/middlewares/rateLimit.ts), [src/server/services/email.service.ts](src/server/services/email.service.ts), [src/server/utils/timezone.ts](src/server/utils/timezone.ts)
+**Files**: [src/server/middlewares/rateLimit.ts](src/server/middlewares/rateLimit.ts), [src/server/services/email.service.ts](src/server/services/email.service.ts), [src/server/utils/timezone.ts](src/server/utils/timezone.ts), [middleware.ts](middleware.ts)
+
+### Audit Logging
+- Sensitive operations are written to the `AuditLog` table: user login, register, logout, and payment/subscription activation
+- Audit writes are fire-and-forget — failures never crash the main request
+- Fields: `userId`, `action`, `resource`, `resourceId`, `ipAddress`, `userAgent`, `metadata`
+
+**File**: [src/server/services/audit.service.ts](src/server/services/audit.service.ts)
 
 ## Error Handling
 
@@ -528,7 +552,7 @@ npm run seed             # Populate questions
 
 ---
 
-**Last Updated**: 2026-02-08
+**Last Updated**: 2026-05-20
 **Project Status**: Active Development
 **Current Branch**: main
-**Latest Security Update**: 2026-02-07
+**Latest Security Update**: 2026-05-20

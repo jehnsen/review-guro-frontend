@@ -1,16 +1,13 @@
-/**
- * GET /api/payments/paymongo/public-key
- * Get PayMongo public key for frontend use
- */
-
+import { NextRequest } from 'next/server';
 import { config } from '@/server/config/env';
 import { createSuccessResponse } from '@/server/utils/nextResponse';
+import { rateLimiters } from '@/server/middlewares/rateLimit';
 
-export async function GET() {
+async function handler(_request: NextRequest) {
   return createSuccessResponse(
-    {
-      publicKey: config.paymongo.publicKey,
-    },
+    { publicKey: config.paymongo.publicKey },
     'Public key retrieved successfully'
   );
 }
+
+export const GET = rateLimiters.general(handler);

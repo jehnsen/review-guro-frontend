@@ -1,12 +1,54 @@
-/**
- * Next.js Middleware
- * Adds security headers to all responses
- */
-
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function decodeJwtPayload(token: string): { role?: string; exp?: number } | null {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return null;
+    return JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));
+  } catch {
+    return null;
+  }
+}
+
 export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Admin route protection: redirect non-admins before the page renders.
+  // Real security is enforced server-side by withAdminAuth; this prevents
+  // the loading flash and direct page access for non-admin users.
+  if (pathname.startsWith('/admin')) {
+    const token = request.cookies.get('auth_token')?.value;
+    if (!token) {
+      return NextResponse.redirect(new URL('/sign-in', request.url));
+    }
+    const payload = decodeJwtPayload(token);
+    const isExpired = payload?.exp ? payload.exp * 1000 < Date.now() : true;
+    if (!payload || isExpired || payload.role !== 'ADMIN') {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+  }
+
+  // CSRF: for mutation API requests verify Origin matches the app host.
+  // This is defense-in-depth — cookies already use SameSite=Strict.
+  if (pathname.startsWith('/api/') && MUTATION_METHODS.has(request.method)) {
+    const origin = request.headers.get('origin');
+    const host = request.headers.get('host');
+    // Allow requests with no Origin (e.g. server-to-server, curl in dev)
+    if (origin && host) {
+      try {
+        const originHost = new URL(origin).host;
+        if (originHost !== host) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+      } catch {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+    }
+  }
+
   // Get the response
   const response = NextResponse.next();
 

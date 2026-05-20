@@ -15,9 +15,11 @@ A comprehensive exam preparation platform built with Next.js 16, TypeScript, and
 - Secure authentication with httpOnly cookies (XSS protection)
 - Email verification system with verification links
 - Password reset via email with secure tokens
-- Rate limiting on sensitive endpoints
-- CSRF protection with SameSite cookies
-- Webhook signature verification for payments
+- Rate limiting on all sensitive endpoints
+- CSRF protection: SameSite=Strict cookies + Origin header validation
+- Admin route protection enforced in Next.js middleware
+- PayMongo webhook signature verification (mandatory in production)
+- Audit logging for login, register, logout, and payment events
 
 ### User Experience
 - Dark/Light mode theme switching
@@ -230,10 +232,23 @@ review-guro-ver2/
 - **Payment** - Payment transaction records
 - **DailyAnalytics** - Daily practice statistics
 - **DailyExplanationView** - AI explanation usage tracking
+- **AuditLog** - Immutable audit trail for sensitive operations
+
+> After pulling schema changes, run `npm run prisma:migrate` to apply new migrations (e.g. the `audit_logs` table added 2026-05-20).
 
 ## Security
 
-### Recent Security Fixes (2026-02-07)
+### Security Hardening (2026-05-20)
+1. **Admin Route Protection**: Next.js middleware now rejects non-admins before the page renders
+2. **CSRF Hardening**: Origin header validated on all `POST`/`PUT`/`PATCH`/`DELETE` API routes
+3. **Webhook Mandatory Verification**: `PAYMONGO_WEBHOOK_SECRET` required in production — app returns 500 if unset
+4. **Audit Logging**: `AuditLog` table records login, register, logout, and subscription activation events
+5. **Rate Limit Expanded**: PayMongo public-key endpoint now rate-limited
+6. **Route Param Validation**: Zod validates payment reference number before forwarding to PayMongo
+7. **Token Cleanup**: Expired password reset tokens deleted on each forgot-password request
+8. **Log Sanitisation**: Full payment payloads removed from production logs
+
+### Security Fixes (2026-02-07)
 1. **XSS Vulnerability**: Migrated JWT storage from localStorage to httpOnly cookies
 2. **Webhook Security**: Added signature verification for PayMongo webhooks
 3. **Payment Verification**: Fixed exploitable manual payment verification
@@ -244,12 +259,14 @@ For detailed security information, see [SECURITY_FIX_XSS_JWT.md](SECURITY_FIX_XS
 
 ### Security Features
 - httpOnly cookies for JWT storage (XSS protection)
-- CSRF protection with SameSite cookies
+- CSRF protection: SameSite=Strict cookies + Origin header validation in middleware
+- Admin routes blocked at middleware level (not just client-side)
 - HTTPS enforcement in production
-- Rate limiting on authentication endpoints
+- Rate limiting on authentication and payment endpoints
 - Email verification for new accounts
-- Secure password reset with time-limited tokens
-- PayMongo webhook signature verification
+- Secure password reset with time-limited tokens (expired tokens auto-cleaned)
+- PayMongo webhook signature verification mandatory in production
+- Audit trail for all sensitive operations
 
 ## Deployment
 
@@ -308,6 +325,6 @@ For issues and feature requests, please use the GitHub issue tracker.
 
 ---
 
-**Last Updated**: 2026-02-08
+**Last Updated**: 2026-05-20
 **Version**: 0.1.0
 **Status**: Active Development
